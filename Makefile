@@ -400,6 +400,14 @@ bin/webhook: $(wildcard cmd/webhook/*.go) \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
+bin/sample-app: $(wildcard cmd/sample-app/*.go) \
+    $(shell for dir in \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/sample-app/... | \
+                          grep cri-resource-manager/pkg/ | \
+                          sed 's#github.com/intel/cri-resource-manager/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
+
 #
 # rules to run go generators
 #
