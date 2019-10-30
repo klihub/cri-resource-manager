@@ -52,8 +52,12 @@ print_gitids () {
             version="$(unknown_version)"
             ;;
     esac
-    echo "gitversion=$version"
     echo "gitbuildid=$buildid"
+    echo "gitversion=$version"
+    rpmversion=$(echo $numver$prerel$commits$dirty | tr '+-' '_')
+    debversion=$numver$prerel$commits$dirty
+    echo "rpmversion=$rpmversion"
+    echo "debversion=$debversion"
 }
 
 #######

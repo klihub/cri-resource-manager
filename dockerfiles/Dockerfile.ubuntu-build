@@ -1,0 +1,28 @@
+# pull in base + a minimal set of useful packages
+FROM ubuntu:latest as ubuntu-base
+
+RUN apt-get update && \
+    apt-get -y install bash systemd sudo git vim make sed debhelper && \
+    apt-get -y install software-properties-common
+
+# pull in latest golang
+FROM ubuntu-base as ubuntu-golang
+
+RUN add-apt-repository ppa:longsleep/golang-backports && \
+    apt-get update && \
+    apt-get -y install golang-go && \
+    apt-get -y install gogoprotobuf && \
+    go get -d -u github.com/golang/protobuf/protoc-gen-go
+
+# customize for building
+FROM ubuntu-golang as ubuntu-build
+
+ARG CREATE_USER="test"
+ARG USER_OPTIONS=""
+ENV container docker
+
+RUN [ -n "$CREATE_USER" ] && \
+    useradd -m -s /bin/bash $CREATE_USER $(echo $USER_OPTIONS | sed 's/__/ /g')
+
+# Let the container run on its own so we can attach/exec into it instead of multiple docker run's.
+CMD [ "/sbin/init" ]
