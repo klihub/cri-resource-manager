@@ -10,7 +10,7 @@ GO_CILINT := golangci-lint
 GO_CILINT_CHECKERS := -D unused,staticcheck,errcheck,deadcode,structcheck,gosimple -E golint,gofmt
 
 # Protoc compiler and protobuf definitions we might need to recompile.
-PROTOC    := $(shell type -p protoc || echo echo 'WARNING: no protoc, cannot run protoc ')
+PROTOC    := $(shell command -v protoc || echo echo 'WARNING: no protoc, cannot run protoc ')
 PROTOBUFS  = $(shell find cmd pkg -name \*.proto)
 PROTOCODE := $(patsubst %.proto,%.pb.go,$(PROTOBUFS))
 
@@ -48,10 +48,10 @@ TAR_UPDATE   := $(TAR) -uf
 TAR_COMPRESS := bzip2
 TAR_SUFFIX   := bz2
 
-# User metadata
+# Metadata for packages, changelog, etc.
 USER_NAME  ?= $(shell git config user.name)
 USER_EMAIL ?= $(shell git config user.email)
-USER_DATE  ?= $(shell date -R)
+BUILD_DATE ?= $(shell date -R)
 
 # RPM spec files we might want to generate.
 SPEC_FILES = $(shell find packaging -name \*.spec.in | sed 's/.spec.in/.spec/g' | uniq)
@@ -63,7 +63,7 @@ SYSCONF_DIRS = $(shell find cmd -name \*.sysconf | sed 's:cmd/::g;s:/.*::g' | un
 # Docker networking options (if in trouble try --network host).
 DOCKER_NETWORK =
 
-# Docker boilerplate/commands to build packages.
+# Docker boilerplate/commands to build debian/ubuntu packages.
 DOCKER_DEB_BUILD := mkdir -p /build && cd /build && \
     git clone /input/cri-resource-manager && cd /build/cri-resource-manager && \
     make BUILD_DIRS=cri-resmgr deb
@@ -192,7 +192,7 @@ test:
 	    $(GO_MODULES)
 
 #
-# Rules for building dist-tarballs, SPEC-files and RPMs.
+# Rule for building dist-tarballs, SPEC files, RPMs, debian collateral, deb's.
 #
 
 dist:
@@ -233,11 +233,25 @@ src.rpm source-rpm: spec dist
 	cp cri-resource-manager*.tar.bz2 ~/rpmbuild/SOURCES && \
 	rpmbuild -bs ~/rpmbuild/SPECS/cri-resource-manager.spec
 
-docker/%:
-	$(Q)img=$(patsubst docker/%,%,$@); \
-	docker rm $$img || : && \
-	echo "Building cross-build docker image $$img..."; \
-	scripts/build/docker-build-image $$img --container $(DOCKER_NETWORK)
+debian/%: debian.in/%
+	$(Q)echo "Generating debian packaging file $@..."; \
+	mkdir -p debian; \
+	eval `$(GIT_ID) .` && \
+	tarball=cri-resource-manager-$$gitversion.tar && \
+	cp $< $@ && \
+	sed -E -i "s/__PACKAGE__/cri-resource-manager/g" $@ && \
+	sed -E -i "s/__TARBALL__/$$tarball/g" $@ && \
+	sed -E -i "s/__VERSION__/$$debversion/g" $@ && \
+	sed -E -i "s/__AUTHOR__/$(USER_NAME)/g" $@ && \
+	sed -E -i "s/__EMAIL__/$(USER_EMAIL)/g" $@ && \
+	sed -E -i "s/__DATE__/$(BUILD_DATE)/g" $@ && \
+	sed -E -i "s/__BUILD_DIRS__/$(BUILD_DIRS)/g" $@
+
+clean-deb:
+	$(Q)rm -f debian
+
+deb: debian/changelog debian/control debian/rules debian/compat dist
+	dpkg-buildpackage -uc
 
 deb-docker-%: docker/%-build
 	$(Q)distro=$(patsubst deb-docker-%,%,$@); \
@@ -255,23 +269,12 @@ deb-docker-%: docker/%-build
 	cp $$builddir/cri-resource-manager*.* $$outdir && \
 	rm -fr $$builddir
 
-
-deb: debian/changelog debian/control debian/rules debian/compat dist
-	dpkg-buildpackage -uc
-
-debian/%: debian.in/%
-	$(Q)echo "Generating debian packaging file $@..."; \
-	mkdir -p debian; \
-	eval `$(GIT_ID) .` && \
-	tarball=cri-resource-manager-$$gitversion.tar && \
-	cp $< $@ && \
-	sed -E -i "s/__PACKAGE__/cri-resource-manager/g" $@ && \
-	sed -E -i "s/__TARBALL__/$$tarball/g" $@ && \
-	sed -E -i "s/__VERSION__/$$debversion/g" $@ && \
-	sed -E -i "s/__AUTHOR__/$(USER_NAME)/g" $@ && \
-	sed -E -i "s/__EMAIL__/$(USER_EMAIL)/g" $@ && \
-	sed -E -i "s/__DATE__/$(USER_DATE)/g" $@ && \
-	sed -E -i "s/__BUILD_DIRS__/$(BUILD_DIRS)/g" $@
+# Build a docker image (for distro cross-building).
+docker/%:
+	$(Q)img=$(patsubst docker/%,%,$@); \
+	docker rm $$img || : && \
+	echo "Building cross-build docker image $$img..."; \
+	scripts/build/docker-build-image $$img --container $(DOCKER_NETWORK)
 
 # Rule for recompiling a changed protobuf.
 %.pb.go: %.proto
