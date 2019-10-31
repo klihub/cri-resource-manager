@@ -14,11 +14,7 @@ RUN apt-get -y install wget && \
     mkdir -p /opt && cd /opt && \
     wget https://dl.google.com/go/$GOTARBALL && \
     tar -xvzf $GOTARBALL && \
-    echo 'PATH="/opt/go/bin:$PATH"' > /etc/profile.d/go.sh && \
-    export PATH="/opt/go/bin:$PATH" && \
-    apt-get -y install gogoprotobuf && \
-    go get -d -u github.com/golang/protobuf/protoc-gen-go
-
+    echo 'PATH="/opt/go/bin:$PATH"' > /etc/profile.d/go.sh
 
 # customize for building
 FROM debian-golang as debian-build

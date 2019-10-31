@@ -10,9 +10,7 @@ FROM ubuntu-base as ubuntu-golang
 
 RUN add-apt-repository ppa:longsleep/golang-backports && \
     apt-get update && \
-    apt-get -y install golang-go && \
-    apt-get -y install gogoprotobuf && \
-    go get -d -u github.com/golang/protobuf/protoc-gen-go
+    apt-get -y install golang-go
 
 # customize for building
 FROM ubuntu-golang as ubuntu-build
@@ -21,8 +19,9 @@ ARG CREATE_USER="test"
 ARG USER_OPTIONS=""
 ENV container docker
 
-RUN [ -n "$CREATE_USER" ] && \
-    useradd -m -s /bin/bash $CREATE_USER $(echo $USER_OPTIONS | sed 's/__/ /g')
+RUN if [ -n "$CREATE_USER" ]; then \
+        useradd -m -s /bin/bash $CREATE_USER $(echo $USER_OPTIONS | sed 's/__/ /g'); \
+    fi
 
 # Let the container run on its own so we can attach/exec into it instead of multiple docker run's.
 CMD [ "/sbin/init" ]
