@@ -65,10 +65,9 @@ DOCKER_NETWORK =
 
 # Docker boilerplate/commands to build packages.
 DOCKER_DEB_BUILD := mkdir /build && cd /build && \
-    git clone /repo/cri-resource-manager && cd /build/cri-resource-manager && \
+    git clone /input/cri-resource-manager && cd /build/cri-resource-manager && \
     make BUILD_DIRS=cri-resmgr deb && \
-    mkdir -p /repo/cri-resource-manager/"\$${PACKAGES}" && \
-    cp ../cri-resource-manager*.* /repo/cri-resource-manager/"\$${PACKAGES}"
+    cp ../cri-resource-manager*.* /output && chown $(shell id -u) /output/*
 
 # Where to leave built packages, if/when we build them in containers.
 PACKAGES_DIR = packages
@@ -242,20 +241,22 @@ docker/%:
 	scripts/build/docker-build-image $$img --container $(DOCKER_NETWORK)
 
 deb-docker-debian: docker/debian-build
-	$(Q)echo "Cross-building debian packages in docker..."; \
-	mkdir -p $(PACKAGES_DIR)/debian && \
+	$(Q)distro=$(patsubst deb-docker-%,%,$@); \
+	echo "Cross-building $$distro packages in docker..."; \
+	mkdir -p $(PACKAGES_DIR)/$$distro && \
 	docker run --rm -ti $(DOCKER_NETWORK) \
-	    --env PACKAGES=$(PACKAGES_DIR)/debian \
-	    -v $$(pwd):/repo/cri-resource-manager \
-	    debian-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
+	    -v $$(pwd):/input/cri-resource-manager \
+	    -v $$(pwd)/$(PACKAGES_DIR)/$$distro:/output \
+	    $$distro-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
 
 deb-docker-ubuntu: docker/ubuntu-build
-	$(Q)echo "Cross-building Ubuntu packages in docker..."; \
-	mkdir -p $(PACKAGES_DIR)/ubuntu && \
+	$(Q)distro=$(patsubst deb-docker-%,%,$@); \
+	echo "Cross-building $$distro packages in docker..."; \
+	mkdir -p $(PACKAGES_DIR)/$$distro && \
 	docker run --rm -ti $(DOCKER_NETWORK) \
-	    --env PACKAGES=$(PACKAGES_DIR)/ubuntu \
-	    -v $$(pwd):/repo/cri-resource-manager \
-	    ubuntu-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
+	    -v $$(pwd):/input/cri-resource-manager \
+	    -v $$(pwd)/$(PACKAGES_DIR)/$$distro:/output \
+	    $$distro-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
 
 deb: debian/changelog debian/control debian/rules debian/compat dist
 	dpkg-buildpackage -uc
