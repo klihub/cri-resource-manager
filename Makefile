@@ -64,10 +64,9 @@ SYSCONF_DIRS = $(shell find cmd -name \*.sysconf | sed 's:cmd/::g;s:/.*::g' | un
 DOCKER_NETWORK =
 
 # Docker boilerplate/commands to build packages.
-DOCKER_DEB_BUILD := mkdir /build && cd /build && \
+DOCKER_DEB_BUILD := mkdir -p /build && cd /build && \
     git clone /input/cri-resource-manager && cd /build/cri-resource-manager && \
-    make BUILD_DIRS=cri-resmgr deb && \
-    cp ../cri-resource-manager*.* /output && chown $(shell id -u) /output/*
+    make BUILD_DIRS=cri-resmgr deb
 
 # Where to leave built packages, if/when we build them in containers.
 PACKAGES_DIR = packages
@@ -240,23 +239,22 @@ docker/%:
 	echo "Building cross-build docker image $$img..."; \
 	scripts/build/docker-build-image $$img --container $(DOCKER_NETWORK)
 
-deb-docker-debian: docker/debian-build
+deb-docker-%: docker/%-build
 	$(Q)distro=$(patsubst deb-docker-%,%,$@); \
-	echo "Cross-building $$distro packages in docker..."; \
+	builddir=build/docker/$$distro; \
+	outdir=$(PACKAGES_DIR)/$$distro; \
+	echo "Docker cross-building $$distro packages..."; \
 	mkdir -p $(PACKAGES_DIR)/$$distro && \
-	docker run --rm -ti $(DOCKER_NETWORK) \
+	rm -fr $$builddir && mkdir -p $$builddir && \
+	docker run --rm -ti $(DOCKER_NETWORK) --user $(shell echo $$USER) \
+	    --env USER_NAME="$(USER_NAME)" --env USER_EMAIL=$(USER_EMAIL) \
 	    -v $$(pwd):/input/cri-resource-manager \
-	    -v $$(pwd)/$(PACKAGES_DIR)/$$distro:/output \
-	    $$distro-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
+	    -v $$(pwd)/$$builddir:/build \
+	    -v $$(pwd)/$$outdir:/output \
+	    $$distro-build /bin/bash -c "$(DOCKER_DEB_BUILD)" && \
+	cp $$builddir/cri-resource-manager*.* $$outdir && \
+	rm -fr $$builddir
 
-deb-docker-ubuntu: docker/ubuntu-build
-	$(Q)distro=$(patsubst deb-docker-%,%,$@); \
-	echo "Cross-building $$distro packages in docker..."; \
-	mkdir -p $(PACKAGES_DIR)/$$distro && \
-	docker run --rm -ti $(DOCKER_NETWORK) \
-	    -v $$(pwd):/input/cri-resource-manager \
-	    -v $$(pwd)/$(PACKAGES_DIR)/$$distro:/output \
-	    $$distro-build /bin/bash -c "$(DOCKER_DEB_BUILD)"
 
 deb: debian/changelog debian/control debian/rules debian/compat dist
 	dpkg-buildpackage -uc
