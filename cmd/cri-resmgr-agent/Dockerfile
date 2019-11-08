@@ -27,7 +27,6 @@ ARG DIR=/go/src/build
 WORKDIR $DIR
 ADD . $DIR
 
-ENV GO111MODULE=on GOFLAGS=-mod=vendor
 RUN make BUILD_DIRS=cri-resmgr-agent
 
 FROM scratch as final

@@ -189,11 +189,8 @@ image-%:
 	    if [ -n "$(IMAGE_REPO)" ]; then \
 	        buildopts="$$buildopts --publish $(IMAGE_REPO)"; \
 	    fi; \
-	    echo "Vendoring dependencies..."; \
-	    go mod vendor && \
 	        scripts/build/docker-build $(DOCKER_OPTIONS) $$buildopts $$src; \
 	        rc=$$?; \
-	    rm -fr vendor; \
 	    exit $$rc
 
 #
