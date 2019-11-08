@@ -7,7 +7,7 @@ ARG DIR=/go/src/build
 WORKDIR $DIR
 ADD . $DIR
 
-ENV GO111MODULE=on GOFLAGS=-mod=vendor
+ENV GO111MODULE=on
 RUN make BUILD_DIRS=sample-app
 
 # Create image without the build deps.
