@@ -21,7 +21,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
-func TestToCPUGrant(t *testing.T) {
+func TestToGrant(t *testing.T) {
 	tcases := []struct {
 		name          string
 		policy        *policy
@@ -68,7 +68,7 @@ func TestToCPUGrant(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := tc.cgrant.ToCPUGrant(tc.policy)
+			_, err := tc.cgrant.ToGrant(tc.policy)
 			if tc.expectedError && err == nil {
 				t.Errorf("Expected error, but got success")
 			}
@@ -104,8 +104,8 @@ func TestAllocationMarshalling(t *testing.T) {
 							node: node{
 								name:    "testnode",
 								kind:    UnknownNode,
-								nodecpu: newCPUSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-								freecpu: newCPUSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+								nodecpu: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+								freecpu: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
 							},
 						},
 					},

@@ -73,7 +73,7 @@ func (p *policy) buildPoolsByTopology() error {
 			p.depth = n.(*node).depth
 		}
 
-		n.DiscoverCPU()
+		n.DiscoverSupply()
 		n.DiscoverMemset()
 
 		return nil
@@ -83,10 +83,10 @@ func (p *policy) buildPoolsByTopology() error {
 }
 
 // Pick a pool and allocate resource from it to the container.
-func (p *policy) allocatePool(container cache.Container) (CPUGrant, error) {
+func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	var pool Node
 
-	request := newCPURequest(container)
+	request := newRequest(container)
 
 	if container.GetNamespace() == kubernetes.NamespaceSystem {
 		pool = p.root
@@ -105,7 +105,7 @@ func (p *policy) allocatePool(container cache.Container) (CPUGrant, error) {
 		pool = pools[0]
 	}
 
-	cpus := pool.FreeCPU()
+	cpus := pool.FreeSupply()
 	grant, err := cpus.Allocate(request)
 	if err != nil {
 		return nil, policyError("failed to allocate %s from %s: %v", request, cpus, err)
@@ -118,7 +118,7 @@ func (p *policy) allocatePool(container cache.Container) (CPUGrant, error) {
 }
 
 // Apply the result of allocation to the requesting container.
-func (p *policy) applyGrant(grant CPUGrant) error {
+func (p *policy) applyGrant(grant Grant) error {
 	log.Debug("* applying grant %s", grant)
 
 	container := grant.GetContainer()
@@ -182,7 +182,7 @@ func (p *policy) applyGrant(grant CPUGrant) error {
 }
 
 // Release resources allocated by this grant.
-func (p *policy) releasePool(container cache.Container) (CPUGrant, bool, error) {
+func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 	log.Debug("* releasing resources allocated to %s", container.PrettyName())
 
 	grant, ok := p.allocations.CPU[container.GetCacheID()]
@@ -194,7 +194,7 @@ func (p *policy) releasePool(container cache.Container) (CPUGrant, bool, error) 
 	log.Debug("  => releasing grant %s...", grant)
 
 	pool := grant.GetNode()
-	cpus := pool.FreeCPU()
+	cpus := pool.FreeSupply()
 
 	cpus.Release(grant)
 	delete(p.allocations.CPU, container.GetCacheID())
@@ -204,7 +204,7 @@ func (p *policy) releasePool(container cache.Container) (CPUGrant, bool, error) 
 }
 
 // Update shared allocations effected by agrant.
-func (p *policy) updateSharedAllocations(grant CPUGrant) error {
+func (p *policy) updateSharedAllocations(grant Grant) error {
 	log.Debug("* updating shared allocations affected by %s", grant)
 
 	for _, other := range p.allocations.CPU {
@@ -214,7 +214,7 @@ func (p *policy) updateSharedAllocations(grant CPUGrant) error {
 		}
 
 		if opt.PinCPU {
-			shared := other.GetNode().FreeCPU().SharableCPUs().String()
+			shared := other.GetNode().FreeSupply().SharableCPUs().String()
 			log.Debug("  => updating %s with shared CPUs of %s: %s...",
 				other, other.GetNode().Name(), shared)
 			other.GetContainer().SetCpusetCpus(shared)
@@ -280,8 +280,8 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 }
 
 // Score pools against the request and sort them by score.
-func (p *policy) sortPoolsByScore(req CPURequest, aff map[int]int32) (map[int]CPUScore, []Node) {
-	scores := make(map[int]CPUScore, p.nodeCnt)
+func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
+	scores := make(map[int]Score, p.nodeCnt)
 
 	p.root.DepthFirst(func(n Node) error {
 		scores[n.NodeID()] = n.GetScore(req)
@@ -296,7 +296,7 @@ func (p *policy) sortPoolsByScore(req CPURequest, aff map[int]int32) (map[int]CP
 }
 
 // Compare two pools by scores for allocation preference.
-func (p *policy) compareScores(request CPURequest, scores map[int]CPUScore,
+func (p *policy) compareScores(request Request, scores map[int]Score,
 	affinity map[int]int32, i int, j int) bool {
 	node1, node2 := p.pools[i], p.pools[j]
 	depth1, depth2 := node1.RootDistance(), node2.RootDistance()
