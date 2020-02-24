@@ -16,6 +16,7 @@ package sysfs
 
 import (
 	"fmt"
+	"io/ioutil"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -53,6 +54,16 @@ const (
 	DiscoverDefault DiscoveryFlag = (DiscoverCPUTopology | DiscoverMemTopology)
 )
 
+// MemoryType is an enum for the Node memory
+type MemoryType int
+
+const (
+	// MemoryTypeDRAM means that the node has regular DRAM-type memory
+	MemoryTypeDRAM MemoryType = iota
+	// MemoryTypePMEM means that the node has persistent memory
+	MemoryTypePMEM
+)
+
 // System devices
 type System struct {
 	logger.Logger                 // our logger instance
@@ -76,11 +87,12 @@ type Package struct {
 
 // Node is a NUMA node.
 type Node struct {
-	path     string // sysfs path
-	id       ID     // node id
-	pkg      ID     // package id
-	cpus     IDSet  // cpus in this node
-	distance []int  // distance/cost to other NUMA nodes
+	path       string     // sysfs path
+	id         ID         // node id
+	pkg        ID         // package id
+	cpus       IDSet      // cpus in this node
+	memoryType MemoryType // node memory type
+	distance   []int      // distance/cost to other NUMA nodes
 }
 
 // CPU is a CPU core.
@@ -541,11 +553,38 @@ func (c *CPU) SetFrequencyLimits(min, max uint64) error {
 	return nil
 }
 
+func readCPUsetFile(base, entry string) (cpuset.CPUSet, error) {
+	path := filepath.Join(base, entry)
+
+	blob, err := ioutil.ReadFile(path)
+	if err != nil {
+		return cpuset.NewCPUSet(), sysfsError(path, "failed to read sysfs entry: %v", err)
+	}
+
+	return cpuset.Parse(strings.Trim(string(blob), "\n"))
+}
+
 // Discover NUMA nodes present in the system.
 func (sys *System) discoverNodes() error {
 	if sys.nodes != nil {
 		return nil
 	}
+
+	// FIXME assumption: if a node only has memory (and no CPUs), it's PMEM. Otherwise it's DRAM.
+	cpuNodes, err := readCPUsetFile(filepath.Join(sys.path, sysfsNumaNodePath), "has_cpu")
+	if err != nil {
+		return err
+	}
+	memoryNodes, err := readCPUsetFile(filepath.Join(sys.path, sysfsNumaNodePath), "has_memory")
+	if err != nil {
+		return err
+	}
+
+	dramNodes := memoryNodes.Intersection(cpuNodes)
+	pmemNodes := memoryNodes.Difference(dramNodes)
+
+	dramNodeIds := FromCPUSet(dramNodes)
+	pmemNodeIds := FromCPUSet(pmemNodes)
 
 	sys.nodes = make(map[ID]*Node)
 
@@ -553,6 +592,18 @@ func (sys *System) discoverNodes() error {
 	for _, entry := range entries {
 		if err := sys.discoverNode(entry); err != nil {
 			return fmt.Errorf("failed to discover node for entry %s: %v", entry, err)
+		}
+	}
+
+	for _, node := range sys.nodes {
+		if _, ok := pmemNodeIds[node.id]; ok {
+			sys.Logger.Info("node %d has PMEM memory", node.id)
+			node.memoryType = MemoryTypePMEM
+		} else if _, ok := dramNodeIds[node.id]; ok {
+			sys.Logger.Info("node %d has DRAM memory", node.id)
+			node.memoryType = MemoryTypeDRAM
+		} else {
+			return fmt.Errorf("Unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemNodes, dramNodes)
 		}
 	}
 
