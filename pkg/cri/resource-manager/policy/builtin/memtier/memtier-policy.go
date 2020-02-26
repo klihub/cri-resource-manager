@@ -43,8 +43,8 @@ type allocations struct {
 
 // TODO(rojkov): this is the interface of system.System we consume in this Go package. Should be moved to the package which is supposed to provide the interface.
 type discoveredSystem interface {
-	Node(system.ID) *system.Node
-	Package(system.ID) *system.Package
+	Node(system.ID) system.Node
+	Package(system.ID) system.CPUPackage
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
 	CPUSet() cpuset.CPUSet
