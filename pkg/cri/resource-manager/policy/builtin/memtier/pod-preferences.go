@@ -15,7 +15,9 @@
 package memtier
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/ghodss/yaml"
 
@@ -30,6 +32,38 @@ const (
 	keyIsolationPreference = "prefer-isolated-cpus"
 	// annotation key for opting out of exclusive allocation and relaxed topology fitting.
 	keySharedCPUPreference = "prefer-shared-cpus"
+	// annotation key for type of memory to allocate
+	keyMemoryTypePreference = "memory-type"
+)
+
+// types by memory type name
+var memoryNamedTypes = map[string]memoryType{
+	"dram":  memoryDRAM,
+	"pmem":  memoryPMEM,
+	"hbmem": memoryHBMEM,
+	"mixed": memoryAll,
+}
+
+// names by memory type
+var memoryTypeNames = map[memoryType]string{
+	memoryDRAM:  "DRAM",
+	memoryPMEM:  "PMEM",
+	memoryHBMEM: "HBMEM",
+}
+
+// memoryType is bitmask of types of memory to allocate
+type memoryType int
+
+// memoryType bits
+const (
+	memoryUnspec memoryType = 0x0
+	memoryDRAM   memoryType = 0x1
+	memoryPMEM   memoryType = 0x2
+	memoryHBMEM  memoryType = 0x4
+	memoryAll    memoryType = 0x7
+
+	// type of memory to use if none specified
+	defaultMemoryType = memoryAll
 )
 
 // podIsolationPreference checks if containers explicitly prefers to run on multiple isolated CPUs.
@@ -149,4 +183,108 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	}
 
 	return full, fraction, isolate, elevate
+}
+
+// podMemoryTypePreference returns what type of memory should be allocated for the container.
+func podMemoryTypePreference(pod cache.Pod, c cache.Container) memoryType {
+	value, ok := pod.GetResmgrAnnotation(keyMemoryTypePreference)
+	if !ok {
+		return memoryUnspec
+	}
+
+	// Try to parse as per-container preference. Assume common for all containers if fails.
+	pref := ""
+	preferences := map[string]string{}
+	if err := yaml.Unmarshal([]byte(value), &preferences); err == nil {
+		name := c.GetName()
+		p, ok := preferences[name]
+		if !ok {
+			return memoryUnspec
+		}
+		pref = p
+	} else {
+		pref = value
+	}
+
+	mtype, err := parseMemoryType(pref)
+	if err != nil {
+		log.Error("invalid memory type preference ('%s') in annotation %s: %v",
+			pref, keyMemoryTypePreference, err)
+		return memoryUnspec
+	}
+	return mtype
+}
+
+// memoryAllocationPreference returns the amount and kind of memory to allocate.
+func memoryAllocationPreference(pod cache.Pod, c cache.Container) (uint64, uint64, memoryType) {
+	resources := c.GetResourceRequirements()
+	mtype := podMemoryTypePreference(pod, c)
+	req, lim := uint64(0), uint64(0)
+
+	if memReq, ok := resources.Requests[corev1.ResourceMemory]; ok {
+		req = uint64(memReq.Value())
+	}
+	if memLim, ok := resources.Limits[corev1.ResourceMemory]; ok {
+		lim = uint64(memLim.Value())
+	}
+
+	return req, lim, mtype
+}
+
+// String stringifies a memoryType.
+func (t memoryType) String() string {
+	str := ""
+	sep := ""
+	for _, bit := range []memoryType{memoryDRAM, memoryPMEM, memoryHBMEM} {
+		if int(t)&int(bit) != 0 {
+			str += sep + memoryTypeNames[bit]
+			sep = ","
+		}
+	}
+	return str
+}
+
+// parseMemoryType parses a memory type string, ideally produced by String()
+func parseMemoryType(value string) (memoryType, error) {
+	if value == "" {
+		return memoryUnspec, nil
+	}
+	mtype := 0
+	for _, typestr := range strings.Split(value, ",") {
+		t, ok := memoryNamedTypes[strings.ToLower(typestr)]
+		if !ok {
+			return memoryUnspec, policyError("unknown memory type value '%s'", typestr)
+		}
+		mtype |= int(t)
+	}
+	return memoryType(mtype), nil
+}
+
+// MarshalJSON is the JSON marshaller for memoryType.
+func (t memoryType) MarshalJSON() ([]byte, error) {
+	value := t.String()
+	return json.Marshal(value)
+}
+
+// UnmarshalJSON is the JSON unmarshaller for memoryType
+func (t *memoryType) UnmarshalJSON(data []byte) error {
+	ival := 0
+	if err := json.Unmarshal(data, &ival); err == nil {
+		*t = memoryType(ival)
+		return nil
+	}
+
+	value := ""
+	if err := json.Unmarshal(data, &value); err != nil {
+		return policyError("failed to unmarshal memoryType '%s': %v",
+			string(data), err)
+	}
+
+	mtype, err := parseMemoryType(value)
+	if err != nil {
+		return policyError("failed parse memoryType '%s': %v", value, err)
+	}
+
+	*t = mtype
+	return nil
 }

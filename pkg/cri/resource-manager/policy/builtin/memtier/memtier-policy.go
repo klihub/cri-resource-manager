@@ -38,7 +38,7 @@ const (
 // allocations is our cache.Cachable for saving resource allocations in the cache.
 type allocations struct {
 	policy *policy
-	CPU    map[string]CPUGrant
+	CPU    map[string]Grant
 }
 
 // TODO(rojkov): this is the interface of system.System we consume in this Go package. Should be moved to the package which is supposed to provide the interface.
@@ -84,7 +84,7 @@ func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend
 	}
 
 	p.nodes = make(map[string]Node)
-	p.allocations = allocations{policy: p, CPU: make(map[string]CPUGrant, 32)}
+	p.allocations = allocations{policy: p, CPU: make(map[string]Grant, 32)}
 
 	if err := p.checkConstraints(); err != nil {
 		log.Fatal("failed to create topology-aware policy: %v", err)
@@ -228,7 +228,7 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 
 	data := map[string]string{}
 	shared := grant.SharedCPUs().String()
-	isolated := grant.ExclusiveCPUs().Intersection(grant.GetNode().GetCPU().IsolatedCPUs())
+	isolated := grant.ExclusiveCPUs().Intersection(grant.GetNode().GetSupply().IsolatedCPUs())
 	exclusive := grant.ExclusiveCPUs().Difference(isolated).String()
 
 	if shared != "" {

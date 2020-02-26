@@ -56,19 +56,21 @@ type cachedGrant struct {
 	Part      int
 	Container string
 	Pool      string
+	MemType   memoryType
 }
 
-func newCachedGrant(cg CPUGrant) *cachedGrant {
+func newCachedGrant(cg Grant) *cachedGrant {
 	ccg := &cachedGrant{}
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.SharedPortion()
 	ccg.Container = cg.GetContainer().GetCacheID()
 	ccg.Pool = cg.GetNode().Name()
+	ccg.MemType = cg.MemoryType()
 
 	return ccg
 }
 
-func (ccg *cachedGrant) ToCPUGrant(policy *policy) (CPUGrant, error) {
+func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 	node, ok := policy.nodes[ccg.Pool]
 	if !ok {
 		return nil, policyError("cache error: failed to restore %v, unknown pool/node", *ccg)
@@ -78,23 +80,24 @@ func (ccg *cachedGrant) ToCPUGrant(policy *policy) (CPUGrant, error) {
 		return nil, policyError("cache error: failed to restore %v, unknown container", *ccg)
 	}
 
-	return newCPUGrant(
+	return newGrant(
 		node,
 		container,
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
+		ccg.MemType,
 	), nil
 }
 
-func (cg *cpuGrant) MarshalJSON() ([]byte, error) {
+func (cg *grant) MarshalJSON() ([]byte, error) {
 	return json.Marshal(newCachedGrant(cg))
 }
 
-func (cg *cpuGrant) UnmarshalJSON(data []byte) error {
+func (cg *grant) UnmarshalJSON(data []byte) error {
 	ccg := cachedGrant{}
 
 	if err := json.Unmarshal(data, &ccg); err != nil {
-		return policyError("failed to restore cpuGrant: %v", err)
+		return policyError("failed to restore grant: %v", err)
 	}
 
 	cg.exclusive = cpuset.MustParse(ccg.Exclusive)
@@ -119,9 +122,9 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 		return policyError("failed to restore allocations: %v", err)
 	}
 
-	a.CPU = make(map[string]CPUGrant, 32)
+	a.CPU = make(map[string]Grant, 32)
 	for id, ccg := range cgrants {
-		a.CPU[id], err = ccg.ToCPUGrant(a.policy)
+		a.CPU[id], err = ccg.ToGrant(a.policy)
 		if err != nil {
 			log.Error("removing unresolvable cached grant %v: %v", *ccg, err)
 			delete(a.CPU, id)
@@ -148,7 +151,7 @@ func (a *allocations) Set(value interface{}) {
 		from = value.(*allocations)
 	}
 
-	a.CPU = make(map[string]CPUGrant, 32)
+	a.CPU = make(map[string]Grant, 32)
 	for id, cg := range from.CPU {
 		a.CPU[id] = cg
 	}

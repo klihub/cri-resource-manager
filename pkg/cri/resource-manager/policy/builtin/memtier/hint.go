@@ -69,7 +69,7 @@ func socketHintScore(hint topology.Hint, sysID system.ID) float64 {
 }
 
 // return the cpuset for the CPU, NUMA or socket hints, preferred in this particular order.
-func (cs *cpuSupply) hintCpus(h topology.Hint) cpuset.CPUSet {
+func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 	var cpus cpuset.CPUSet
 
 	switch {
