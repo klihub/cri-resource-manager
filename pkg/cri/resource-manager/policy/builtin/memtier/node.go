@@ -107,7 +107,7 @@ type Node interface {
 	dump(string, ...int)
 
 	GetMemoryType() memoryType
-	GetPhysicalNodeID() (system.ID, error)
+	GetPhysicalNodeIDs() []system.ID
 
 	GetScore(Request) Score
 	HintScore(topology.Hint) float64
@@ -365,8 +365,8 @@ func (n *node) DiscoverMemset() {
 }
 
 // Discover the set of memory attached to this node.
-func (n *node) GetPhysicalNodeID() (system.ID, error) {
-	return n.self.node.GetPhysicalNodeID()
+func (n *node) GetPhysicalNodeIDs() []system.ID {
+	return n.self.node.GetPhysicalNodeIDs()
 }
 
 // GrantedSharedCPU returns the amount of granted shared CPU capacity of this node.
@@ -424,8 +424,8 @@ func (n *numanode) GetSupply() Supply {
 	return n.noderes.Clone()
 }
 
-func (n *numanode) GetPhysicalNodeID() (system.ID, error) {
-	return n.id, nil
+func (n *numanode) GetPhysicalNodeIDs() []system.ID {
+	return []system.ID{n.id}
 }
 
 // DiscoverSupply discovers the CPU supply available at this node.
@@ -539,8 +539,14 @@ func (n *socketnode) GetSupply() Supply {
 	return n.noderes.Clone()
 }
 
-func (n *socketnode) GetPhysicalNodeID() (system.ID, error) {
-	return n.id, nil
+func (n *socketnode) GetPhysicalNodeIDs() []system.ID {
+	ids := make([]system.ID, 0)
+	ids = append(ids, n.id)
+	for _, c := range n.children {
+		cIds := c.GetPhysicalNodeIDs()
+		ids = append(ids, cIds...)
+	}
+	return ids
 }
 
 // DiscoverSupply discovers the CPU supply available at this socket.
@@ -686,8 +692,13 @@ func (n *virtualnode) HintScore(hint topology.Hint) float64 {
 	return 0.0
 }
 
-func (n *virtualnode) GetPhysicalNodeID() (system.ID, error) {
-	return -1, fmt.Errorf("No physical node")
+func (n *virtualnode) GetPhysicalNodeIDs() []system.ID {
+	ids := make([]system.ID, 0)
+	for _, c := range n.children {
+		cIds := c.GetPhysicalNodeIDs()
+		ids = append(ids, cIds...)
+	}
+	return ids
 }
 
 // Finalize the setup of nilnode.

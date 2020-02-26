@@ -88,11 +88,11 @@ func TestAllocationMarshalling(t *testing.T) {
 	}{
 		{
 			name: "non-zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode"}}`),
+			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":""}}`),
 		},
 		{
 			name: "zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode"}}`),
+			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":""}}`),
 		},
 	}
 	for _, tc := range tcases {
@@ -104,8 +104,8 @@ func TestAllocationMarshalling(t *testing.T) {
 							node: node{
 								name:    "testnode",
 								kind:    UnknownNode,
-								nodecpu: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-								freecpu: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+								noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+								freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
 							},
 						},
 					},
@@ -127,7 +127,7 @@ func TestAllocationMarshalling(t *testing.T) {
 
 			out, marshallingErr := alloc.MarshalJSON()
 			if !bytes.Equal(out, tc.data) {
-				t.Errorf("Expected %q, but got %q", tc.data, out)
+				t.Errorf("Expected\n%q\nBut got\n%q", tc.data, out)
 			}
 			if tc.expectedMarshallingError && marshallingErr == nil {
 				t.Errorf("Expected marshalling error, but got success")
