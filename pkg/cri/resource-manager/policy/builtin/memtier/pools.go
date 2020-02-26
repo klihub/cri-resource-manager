@@ -290,6 +290,34 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 	return result
 }
 
+func (p *policy) getCurrentFreeMemory(node Node) (uint64, error) {
+	var id system.ID = system.ID(node.NodeID())
+	numaNode := p.sys.Node(id)
+	memInfo, err := numaNode.MemoryInfo()
+
+	if err != nil {
+		return 0, err
+	}
+
+	return memInfo.MemFree, nil
+}
+
+func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
+	filtered := make([]Node, 0)
+
+	for _, node := range originals {
+		nodeFreeMemory, err := p.getCurrentFreeMemory(node)
+		if err != nil {
+			continue
+		}
+		if req.GetMemLimit() < nodeFreeMemory {
+			filtered = append(filtered, node)
+		}
+	}
+
+	return filtered
+}
+
 // Score pools against the request and sort them by score.
 func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
@@ -299,11 +327,15 @@ func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score
 		return nil
 	})
 
-	sort.Slice(p.pools, func(i, j int) bool {
+	// Filter ouit pools which don't have enough uncompressible resources
+	// (memory) to satisfy the request.
+	filteredPools := p.filterInsufficientResources(req, p.pools)
+
+	sort.Slice(filteredPools, func(i, j int) bool {
 		return p.compareScores(req, scores, aff, i, j)
 	})
 
-	return scores, p.pools
+	return scores, filteredPools
 }
 
 // Compare two pools by scores for allocation preference.
@@ -338,6 +370,8 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 	//       * fewer colocated containers win
 	//       * for a tie prefer more shared capacity then the smaller id
 	//
+	// Before this comparison is reached, nodes with insufficient uncompressible resources
+	// (memory) have been filtered out.
 
 	// 1) a node with insufficient isolated or shared capacity loses
 	switch {
@@ -353,6 +387,24 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 	}
 	if affinity2 > affinity1 {
 		return false
+	}
+
+	// 2.5) matching memory type wins
+	if request.MemoryType() != memoryAll && request.MemoryType() != memoryUnspec {
+		// see if the nodes have different memory types and whether they match the request
+		if request.MemoryType() == memorySlow {
+			if node1.HasPMEM() && !node2.HasPMEM() {
+				return true
+			} else if !node1.HasPMEM() && node2.HasPMEM() {
+				return false
+			}
+		} else if request.MemoryType() == memoryNormal {
+			if node1.HasDRAM() && !node2.HasDRAM() {
+				return true
+			} else if !node1.HasDRAM() && node2.HasDRAM() {
+				return false
+			}
+		}
 	}
 
 	// 3) better topology hint score wins

@@ -106,6 +106,9 @@ type Node interface {
 	// Dump type-specific state of the node.
 	dump(string, ...int)
 
+	HasDRAM() bool
+	HasPMEM() bool
+
 	GetScore(Request) Score
 	HintScore(topology.Hint) float64
 }
@@ -379,6 +382,14 @@ func (n *node) GetScore(req Request) Score {
 // HintScore calculates the (CPU) score of the node for the given topology hint.
 func (n *node) HintScore(hint topology.Hint) float64 {
 	return n.self.node.HintScore(hint)
+}
+
+func (n *node) HasPMEM() bool {
+	return n.pMem.Size() > 0
+}
+
+func (n *node) HasDRAM() bool {
+	return n.mem.Size() > 0
 }
 
 // NewNumaNode create a node for a CPU socket.

@@ -22,7 +22,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
-// Supply represents avaialbe CPU capacity of a node.
+// Supply represents avaialbe CPU and memory capacity of a node.
 type Supply interface {
 	// GetNode returns the node supplying this capacity.
 	GetNode() Node
@@ -50,7 +50,7 @@ type Supply interface {
 	String() string
 }
 
-// Request represents a CPU resources requested by a container.
+// Request represents CPU and memory resources requested by a container.
 type Request interface {
 	// GetContainer returns the container requesting CPU capacity.
 	GetContainer() cache.Container
@@ -65,9 +65,13 @@ type Request interface {
 	Isolate() bool
 	// Elevate returns the requested elevation/allocation displacement for this request.
 	Elevate() int
+	// MemoryType returns the type(s) of requested memory.
+	MemoryType() memoryType
+
+	GetMemLimit() uint64
 }
 
-// Grant represents CPU capacity allocated to a container from a node.
+// Grant represents CPU and memory capacity allocated to a container from a node.
 type Grant interface {
 	// GetContainer returns the container CPU capacity is granted to.
 	GetContainer() cache.Container
@@ -81,7 +85,7 @@ type Grant interface {
 	SharedPortion() int
 	// IsolatedCpus returns the exclusively granted isolated cpuset.
 	IsolatedCPUs() cpuset.CPUSet
-	// MemoryType returns the type(s) of requested/granted memory.
+	// MemoryType returns the type(s) of granted memory.
 	MemoryType() memoryType
 	// String returns a printable representation of this grant.
 	String() string
@@ -376,6 +380,22 @@ func (cr *request) Isolate() bool {
 // Elevate returns the requested elevation/allocation displacement for this request.
 func (cr *request) Elevate() int {
 	return cr.elevate
+}
+
+func (cr *request) GetMemLimit() uint64 {
+	return cr.memLim
+}
+
+func (cr *request) GetMemType() memoryType {
+	return cr.memType
+}
+
+// MemoryType returns the requested type of memory for the grant.
+func (cr *request) MemoryType() memoryType {
+	if cr.memType == memoryUnspec {
+		return defaultMemoryType
+	}
+	return cr.memType
 }
 
 // Score collects data for scoring this supply wrt. the given request.
