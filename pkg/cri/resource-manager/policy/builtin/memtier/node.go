@@ -106,8 +106,8 @@ type Node interface {
 	// Dump type-specific state of the node.
 	dump(string, ...int)
 
-	HasDRAM() bool
-	HasPMEM() bool
+	GetMemoryType() memoryType
+	GetPhysicalNodeID() (system.ID, error)
 
 	GetScore(Request) Score
 	HintScore(topology.Hint) float64
@@ -364,6 +364,11 @@ func (n *node) DiscoverMemset() {
 	n.self.node.DiscoverMemset()
 }
 
+// Discover the set of memory attached to this node.
+func (n *node) GetPhysicalNodeID() (system.ID, error) {
+	return n.self.node.GetPhysicalNodeID()
+}
+
 // GrantedSharedCPU returns the amount of granted shared CPU capacity of this node.
 func (n *node) GrantedSharedCPU() int {
 	granted := n.freeres.Granted()
@@ -384,12 +389,18 @@ func (n *node) HintScore(hint topology.Hint) float64 {
 	return n.self.node.HintScore(hint)
 }
 
-func (n *node) HasPMEM() bool {
-	return n.pMem.Size() > 0
-}
-
-func (n *node) HasDRAM() bool {
-	return n.mem.Size() > 0
+func (n *node) GetMemoryType() memoryType {
+	var memoryMask memoryType = 0x0
+	if n.pMem.Size() > 0 {
+		memoryMask |= memoryPMEM
+	}
+	if n.mem.Size() > 0 {
+		memoryMask |= memoryDRAM
+	}
+	if n.hbMem.Size() > 0 {
+		memoryMask |= memoryHBMEM
+	}
+	return memoryMask
 }
 
 // NewNumaNode create a node for a CPU socket.
@@ -411,6 +422,10 @@ func (n *numanode) dump(prefix string, level ...int) {
 // Get CPU supply available at this node.
 func (n *numanode) GetSupply() Supply {
 	return n.noderes.Clone()
+}
+
+func (n *numanode) GetPhysicalNodeID() (system.ID, error) {
+	return n.id, nil
 }
 
 // DiscoverSupply discovers the CPU supply available at this node.
@@ -522,6 +537,10 @@ func (n *socketnode) dump(prefix string, level ...int) {
 // Get CPU supply available at this node.
 func (n *socketnode) GetSupply() Supply {
 	return n.noderes.Clone()
+}
+
+func (n *socketnode) GetPhysicalNodeID() (system.ID, error) {
+	return n.id, nil
 }
 
 // DiscoverSupply discovers the CPU supply available at this socket.
@@ -665,6 +684,10 @@ func (n *virtualnode) HintScore(hint topology.Hint) float64 {
 	}
 
 	return 0.0
+}
+
+func (n *virtualnode) GetPhysicalNodeID() (system.ID, error) {
+	return -1, fmt.Errorf("No physical node")
 }
 
 // Finalize the setup of nilnode.

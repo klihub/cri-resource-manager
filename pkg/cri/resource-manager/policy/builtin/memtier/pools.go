@@ -291,7 +291,11 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 }
 
 func (p *policy) getCurrentFreeMemory(node Node) (uint64, error) {
-	var id system.ID = system.ID(node.NodeID())
+	id, err := node.GetPhysicalNodeID()
+	if err != nil {
+		return 0, err
+	}
+
 	numaNode := p.sys.Node(id)
 	memInfo, err := numaNode.MemoryInfo()
 
@@ -327,7 +331,7 @@ func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score
 		return nil
 	})
 
-	// Filter ouit pools which don't have enough uncompressible resources
+	// Filter out pools which don't have enough uncompressible resources
 	// (memory) to satisfy the request.
 	filteredPools := p.filterInsufficientResources(req, p.pools)
 
@@ -356,17 +360,18 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 	//
 	// 1) - insufficient isolated or shared capacity loses
 	// 2) - if we have affinity, the higher affinity wins
-	// 3) - if we have topology hints
+	// 3) - if only one node matches the memory type request, it wins
+	// 4) - if we have topology hints
 	//       * better hint score wins
 	//       * for a tie, prefer the lower node then the smaller id
-	// 4) - if a node is lower in the tree it wins
-	// 5) - for isolated allocations
+	// 5) - if a node is lower in the tree it wins
+	// 6) - for isolated allocations
 	//       * more isolated capacity wins
 	//       * for a tie, prefer the smaller id
-	// 6) - for exclusive allocations
+	// 7) - for exclusive allocations
 	//       * more slicable (shared) capacity wins
 	//       * for a tie, prefer the smaller id
-	// 7) - for shared-only allocations
+	// 8) - for shared-only allocations
 	//       * fewer colocated containers win
 	//       * for a tie prefer more shared capacity then the smaller id
 	//
@@ -389,25 +394,17 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 		return false
 	}
 
-	// 2.5) matching memory type wins
-	if request.MemoryType() != memoryAll && request.MemoryType() != memoryUnspec {
+	// 3) matching memory type wins
+	if request.MemoryType() != memoryUnspec {
 		// see if the nodes have different memory types and whether they match the request
-		if request.MemoryType() == memorySlow {
-			if node1.HasPMEM() && !node2.HasPMEM() {
-				return true
-			} else if !node1.HasPMEM() && node2.HasPMEM() {
-				return false
-			}
-		} else if request.MemoryType() == memoryNormal {
-			if node1.HasDRAM() && !node2.HasDRAM() {
-				return true
-			} else if !node1.HasDRAM() && node2.HasDRAM() {
-				return false
-			}
+		if node1.GetMemoryType() == request.MemoryType() && node2.GetMemoryType() != request.MemoryType() {
+			return true
+		} else if node1.GetMemoryType() != request.MemoryType() && node2.GetMemoryType() == request.MemoryType() {
+			return false
 		}
 	}
 
-	// 3) better topology hint score wins
+	// 4) better topology hint score wins
 	hScores1 := score1.HintScores()
 	if len(hScores1) > 0 {
 		hScores2 := score2.HintScores()
@@ -442,7 +439,7 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 		}
 	}
 
-	// 4) a lower node wins
+	// 5) a lower node wins
 	if depth1 > depth2 {
 		return true
 	}
@@ -450,7 +447,7 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 		return false
 	}
 
-	// 5) more isolated capacity wins
+	// 6) more isolated capacity wins
 	if request.Isolate() {
 		if isolated1 > isolated2 {
 			return true
@@ -461,7 +458,7 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 		return id1 < id2
 	}
 
-	// 6) more slicable shared capacity wins
+	// 7) more slicable shared capacity wins
 	if request.FullCPUs() > 0 {
 		if shared1 > shared2 {
 			return true
@@ -473,7 +470,7 @@ func (p *policy) compareScores(request Request, scores map[int]Score,
 		return id1 < id2
 	}
 
-	// 7) fewer colocated containers win
+	// 8) fewer colocated containers win
 	if score1.Colocated() < score2.Colocated() {
 		return true
 	}
