@@ -153,7 +153,7 @@ func (p *policy) applyGrant(grant Grant) error {
 	mems := ""
 	node := grant.GetNode()
 	if !node.IsRootNode() && opt.PinMemory {
-		mems = node.GetMemset(grant.MemoryType()).String()
+		mems = grant.Memset().String()
 	}
 
 	if opt.PinCPU {

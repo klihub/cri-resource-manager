@@ -17,9 +17,11 @@ package memtier
 import (
 	"fmt"
 
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+
 	"github.com/intel/cri-resource-manager/pkg/cpuallocator"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	system "github.com/intel/cri-resource-manager/pkg/sysfs"
 )
 
 // Supply represents avaialbe CPU and memory capacity of a node.
@@ -87,6 +89,8 @@ type Grant interface {
 	IsolatedCPUs() cpuset.CPUSet
 	// MemoryType returns the type(s) of granted memory.
 	MemoryType() memoryType
+	// Memset returns the granted memory controllers as a string.
+	Memset() system.IDSet
 	// String returns a printable representation of this grant.
 	String() string
 }
@@ -147,7 +151,8 @@ type grant struct {
 	node      Node            // node CPU is supplied from
 	exclusive cpuset.CPUSet   // exclusive CPUs
 	portion   int             // milliCPUs granted from shared set
-	memType   memoryType      // requested types of memmory
+	memType   memoryType      // requested types of memory
+	memset    system.IDSet    // assigned memory nodes
 }
 
 var _ Grant = &grant{}
@@ -323,6 +328,9 @@ func newRequest(container cache.Container) Request {
 	full, fraction, isolate, elevate := cpuAllocationPreferences(pod, container)
 
 	req, lim, mtype := memoryAllocationPreference(pod, container)
+	if mtype == memoryUnspec {
+		mtype = defaultMemoryType
+	}
 
 	return &request{
 		container: container,
@@ -392,9 +400,6 @@ func (cr *request) GetMemType() memoryType {
 
 // MemoryType returns the requested type of memory for the grant.
 func (cr *request) MemoryType() memoryType {
-	if cr.memType == memoryUnspec {
-		return defaultMemoryType
-	}
 	return cr.memType
 }
 
@@ -498,12 +503,21 @@ func (score *score) String() string {
 
 // newGrant creates a CPU grant from the given node for the container.
 func newGrant(n Node, c cache.Container, exclusive cpuset.CPUSet, portion int, mt memoryType) Grant {
+	mems := n.GetMemset(mt)
+	if mems.Size() == 0 {
+		mems = n.GetMemset(memoryDRAM)
+		if mems.Size() == 0 {
+			mems = n.GetMemset(memoryAll)
+		}
+	}
+
 	return &grant{
 		node:      n,
 		container: c,
 		exclusive: exclusive,
 		portion:   portion,
 		memType:   mt,
+		memset:    mems.Clone(),
 	}
 }
 
@@ -539,10 +553,12 @@ func (cg *grant) IsolatedCPUs() cpuset.CPUSet {
 
 // MemoryType returns the requested type of memory for the grant.
 func (cg *grant) MemoryType() memoryType {
-	if cg.memType == memoryUnspec {
-		return defaultMemoryType
-	}
 	return cg.memType
+}
+
+// Memset returns the granted memory controllers as a string.
+func (cg *grant) Memset() system.IDSet {
+	return cg.memset
 }
 
 // String returns a printable representation of the CPU grant.

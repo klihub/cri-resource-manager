@@ -16,8 +16,11 @@ package memtier
 
 import (
 	"encoding/json"
-	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
+
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+
+	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
+	system "github.com/intel/cri-resource-manager/pkg/sysfs"
 )
 
 const (
@@ -57,6 +60,7 @@ type cachedGrant struct {
 	Container string
 	Pool      string
 	MemType   memoryType
+	Memset    system.IDSet
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -66,6 +70,7 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Container = cg.GetContainer().GetCacheID()
 	ccg.Pool = cg.GetNode().Name()
 	ccg.MemType = cg.MemoryType()
+	ccg.Memset = cg.Memset().Clone()
 
 	return ccg
 }
@@ -80,13 +85,20 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		return nil, policyError("cache error: failed to restore %v, unknown container", *ccg)
 	}
 
-	return newGrant(
+	g := newGrant(
 		node,
 		container,
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
-	), nil
+	)
+
+	if g.Memset().String() != ccg.Memset.String() {
+		log.Error("cache error: mismatch in stored/recalculated memset: %s != %s",
+			ccg.Memset, g.Memset())
+	}
+
+	return g, nil
 }
 
 func (cg *grant) MarshalJSON() ([]byte, error) {
