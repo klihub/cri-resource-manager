@@ -26,15 +26,70 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
-type mockSystem struct {
-	isolatedCPU int
+type mockSystemNode struct {
+	id      system.ID // node id
+	memFree uint64
 }
 
-func (fake *mockSystem) Node(system.ID) *system.Node {
-	return &system.Node{}
+func (fake *mockSystemNode) MemoryInfo() (*system.MemInfo, error) {
+	return &system.MemInfo{MemFree: fake.memFree}, nil
 }
-func (fake *mockSystem) Package(system.ID) *system.Package {
-	return &system.Package{}
+
+func (fake *mockSystemNode) PackageID() system.ID {
+	return 0
+}
+
+func (fake *mockSystemNode) ID() system.ID {
+	return fake.id
+}
+
+func (fake *mockSystemNode) GetMemoryType() system.MemoryType {
+	return system.MemoryTypeDRAM
+}
+
+func (fake *mockSystemNode) CPUSet() cpuset.CPUSet {
+	return cpuset.NewCPUSet()
+}
+
+func (fake *mockSystemNode) Distance() []int {
+	return []int{0}
+}
+
+func (fake *mockSystemNode) DistanceFrom(id system.ID) int {
+	return 0
+}
+
+type mockCPUPackage struct {
+}
+
+func (p *mockCPUPackage) ID() system.ID {
+	return system.ID(0)
+}
+
+func (p *mockCPUPackage) CPUSet() cpuset.CPUSet {
+	return cpuset.NewCPUSet()
+}
+
+func (p *mockCPUPackage) NodeIDs() []system.ID {
+	return []system.ID{}
+}
+
+type mockSystem struct {
+	isolatedCPU int
+	nodes       []system.Node
+}
+
+func (fake *mockSystem) Node(id system.ID) system.Node {
+	for _, node := range fake.nodes {
+		if node.ID() == id {
+			return node
+		}
+	}
+	return &mockSystemNode{}
+}
+
+func (fake *mockSystem) Package(system.ID) system.CPUPackage {
+	return &mockCPUPackage{}
 }
 func (fake *mockSystem) Offlined() cpuset.CPUSet {
 	return cpuset.NewCPUSet()
@@ -50,16 +105,24 @@ func (fake *mockSystem) CPUSet() cpuset.CPUSet {
 	return cpuset.NewCPUSet()
 }
 func (fake *mockSystem) SocketCount() int {
-	return 2
+	return len(fake.nodes)
 }
 func (fake *mockSystem) NUMANodeCount() int {
-	return 2
+	return len(fake.nodes)
 }
 func (fake *mockSystem) PackageIDs() []system.ID {
-	return []system.ID{0, 1}
+	ids := make([]system.ID, len(fake.nodes))
+	for i, node := range fake.nodes {
+		ids[i] = node.PackageID()
+	}
+	return ids
 }
 func (fake *mockSystem) NodeIDs() []system.ID {
-	return []system.ID{0, 1}
+	ids := make([]system.ID, len(fake.nodes))
+	for i, node := range fake.nodes {
+		ids[i] = node.ID()
+	}
+	return ids
 }
 
 type mockContainer struct {

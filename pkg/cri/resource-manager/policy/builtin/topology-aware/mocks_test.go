@@ -50,6 +50,9 @@ func (fake *mockSystemNode) Distance() []int {
 func (fake *mockSystemNode) DistanceFrom(id system.ID) int {
 	return 0
 }
+func (fake *mockSystemNode) GetMemoryType() system.MemoryType {
+	return system.MemoryTypeDRAM
+}
 
 type mockSystemCPUPackage struct {
 	id system.ID // package id

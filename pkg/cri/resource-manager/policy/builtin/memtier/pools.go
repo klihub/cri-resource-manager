@@ -272,7 +272,7 @@ func (p *policy) calculatePoolAffinities(container cache.Container) map[int]int3
 	return result
 }
 
-// Caculate affinity of this container (against all other containers).
+// Calculate affinity of this container (against all other containers).
 func (p *policy) calculateContainerAffinity(container cache.Container) map[string]int32 {
 	log.Debug("* calculating affinity for container %s...", container.PrettyName())
 
@@ -290,27 +290,34 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 	return result
 }
 
-func (p *policy) getCurrentFreeMemory(node Node) (uint64, error) {
-	id, err := node.GetPhysicalNodeID()
-	if err != nil {
-		return 0, err
+// Find the amount of free memory for this node and all its children. The lookups are cahced in the "infos" map.
+func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInfo) (uint64, error) {
+	free := uint64(0)
+	ids := node.GetPhysicalNodeIDs()
+
+	for _, id := range ids {
+		if memInfo, found := infos[id]; found {
+			free += memInfo.MemFree
+		} else {
+			numaNode := p.sys.Node(id)
+			memInfo, err := numaNode.MemoryInfo()
+			if err != nil {
+				return 0, err
+			}
+			infos[id] = memInfo
+			free += memInfo.MemFree
+		}
 	}
 
-	numaNode := p.sys.Node(id)
-	memInfo, err := numaNode.MemoryInfo()
-
-	if err != nil {
-		return 0, err
-	}
-
-	return memInfo.MemFree, nil
+	return free, nil
 }
 
 func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
 	filtered := make([]Node, 0)
 
+	infos := make(map[system.ID]*system.MemInfo)
 	for _, node := range originals {
-		nodeFreeMemory, err := p.getCurrentFreeMemory(node)
+		nodeFreeMemory, err := p.getNodeFreeMemory(node, infos)
 		if err != nil {
 			continue
 		}
