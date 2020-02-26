@@ -241,6 +241,34 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 		data[policyapi.ExportExclusiveCPUs] = exclusive
 	}
 
+	mems := grant.Memset()
+	dram := system.NewIDSet()
+	pmem := system.NewIDSet()
+	hbmem := system.NewIDSet()
+	for _, id := range mems.SortedMembers() {
+		node := p.sys.Node(id)
+		switch node.GetMemoryType() {
+		case system.MemoryTypeDRAM:
+			dram.Add(id)
+		case system.MemoryTypePMEM:
+			pmem.Add(id)
+			/*
+			   case system.MemoryTypeHBMEM:
+			       hbmem.Add(id)
+			*/
+		}
+	}
+	data["ALL_MEMS"] = mems.String()
+	if dram.Size() > 0 {
+		data["DRAM_MEMS"] = dram.String()
+	}
+	if pmem.Size() > 0 {
+		data["PMEM_MEMS"] = pmem.String()
+	}
+	if hbmem.Size() > 0 {
+		data["HBMEM_MEMS"] = hbmem.String()
+	}
+
 	return data
 }
 
