@@ -74,6 +74,10 @@ func uncompress(file *os.File, dir string) error {
 			if err != nil {
 				return err
 			}
+		} else if header.Typeflag == tar.TypeSymlink {
+			// Create a file instead of using os.Symlink because the
+			// symlink API checks that the other end really exists.
+			os.Create(path.Join(dir, header.Name))
 		}
 	}
 }
