@@ -74,6 +74,45 @@ func (p *mockCPUPackage) NodeIDs() []system.ID {
 	return []system.ID{}
 }
 
+type mockCPU struct {
+	isolated cpuset.CPUSet
+	online   cpuset.CPUSet
+	id       system.ID
+	node     mockSystemNode
+	pkg      mockCPUPackage
+}
+
+func (c *mockCPU) BaseFrequency() uint64 {
+	return 0
+}
+func (c *mockCPU) ID() system.ID {
+	return system.ID(0)
+}
+func (c *mockCPU) PackageID() system.ID {
+	return c.pkg.ID()
+}
+func (c *mockCPU) NodeID() system.ID {
+	return c.node.ID()
+}
+func (c *mockCPU) CoreID() system.ID {
+	return c.id
+}
+func (c *mockCPU) ThreadCPUSet() cpuset.CPUSet {
+	return cpuset.NewCPUSet()
+}
+func (c *mockCPU) FrequencyRange() system.CPUFreq {
+	return system.CPUFreq{}
+}
+func (c *mockCPU) Online() bool {
+	return true
+}
+func (c *mockCPU) Isolated() bool {
+	return false
+}
+func (c *mockCPU) SetFrequencyLimits(min, max uint64) error {
+	return nil
+}
+
 type mockSystem struct {
 	isolatedCPU int
 	nodes       []system.Node
@@ -88,6 +127,15 @@ func (fake *mockSystem) Node(id system.ID) system.Node {
 	return &mockSystemNode{}
 }
 
+func (fake *mockSystem) CPU(system.ID) system.CPU {
+	return &mockCPU{}
+}
+func (fake *mockSystem) CPUCount() int {
+	return 2
+}
+func (fake *mockSystem) Discover(flags system.DiscoveryFlag) error {
+	return nil
+}
 func (fake *mockSystem) Package(system.ID) system.CPUPackage {
 	return &mockCPUPackage{}
 }
@@ -104,10 +152,19 @@ func (fake *mockSystem) Isolated() cpuset.CPUSet {
 func (fake *mockSystem) CPUSet() cpuset.CPUSet {
 	return cpuset.NewCPUSet()
 }
+func (fake *mockSystem) CPUIDs() []system.ID {
+	return []system.ID{}
+}
+func (fake *mockSystem) PackageCount() int {
+	return len(fake.nodes)
+}
 func (fake *mockSystem) SocketCount() int {
 	return len(fake.nodes)
 }
 func (fake *mockSystem) NUMANodeCount() int {
+	return len(fake.nodes)
+}
+func (fake *mockSystem) ThreadCount() int {
 	return len(fake.nodes)
 }
 func (fake *mockSystem) PackageIDs() []system.ID {
@@ -123,6 +180,12 @@ func (fake *mockSystem) NodeIDs() []system.ID {
 		ids[i] = node.ID()
 	}
 	return ids
+}
+func (fake *mockSystem) SetCPUFrequencyLimits(min, max uint64, cpus system.IDSet) error {
+	return nil
+}
+func (fake *mockSystem) SetCpusOnline(online bool, cpus system.IDSet) (system.IDSet, error) {
+	return system.NewIDSet(), nil
 }
 
 type mockContainer struct {
