@@ -15,8 +15,12 @@
 package instrumentation
 
 import (
+	"time"
+
 	"contrib.go.opencensus.io/exporter/jaeger"
 	"go.opencensus.io/trace"
+
+	logger "github.com/intel/cri-resource-manager/pkg/log"
 )
 
 // createJaegerExporter creates a trace data exporter for Jaeger.
@@ -25,13 +29,14 @@ func (s *Service) createJaegerExporter() error {
 
 	log.Debug("creating Jaeger exporter...")
 
+	ratelimited := logger.RateLimit(log, logger.Interval(5*time.Minute))
 	cfg := jaeger.Options{
 		ServiceName:       ServiceName,
 		CollectorEndpoint: opt.Collector,
 		AgentEndpoint:     opt.Agent,
 
 		Process: jaeger.Process{ServiceName: ServiceName},
-		OnError: func(err error) { log.Error("%v", err) },
+		OnError: func(err error) { ratelimited.Error("%v", err) },
 	}
 
 	if s.jexport, err = jaeger.NewExporter(cfg); err != nil {
