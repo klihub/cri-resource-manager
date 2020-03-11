@@ -74,6 +74,10 @@ func uncompress(file *os.File, dir string) error {
 			if err != nil {
 				return err
 			}
+		} else if header.Typeflag == tar.TypeSymlink {
+			// Create a file instead of using os.Symlink because the
+			// symlink API checks that the other end really exists.
+			os.Create(path.Join(dir, header.Name))
 		}
 	}
 }
@@ -88,10 +92,10 @@ func TestMemoryLimitFiltering(t *testing.T) {
 		name                   string
 		nodes                  []Node
 		numaNodes              []system.Node
-		expectedRemainingNodes []int
 		req                    Request
 		affinities             map[int]int32
 		tree                   map[int][]int
+		expectedRemainingNodes []int
 	}{
 		{
 			name: "single node memory limit (fits)",
@@ -310,10 +314,12 @@ func TestPoolCreation(t *testing.T) {
 	tcases := []struct {
 		path                    string
 		name                    string
-		expectedRemainingNodes  []int
 		req                     Request
 		affinities              map[int]int32
+		expectedRemainingNodes  []int
 		expectedFirstNodeMemory memoryType
+		expectedLeafNodeCPUs    int
+		expectedRootNodeCPUs    int
 	}{
 		{
 			path: path.Join(dir, "sysfs", "desktop", "sys"),
@@ -326,6 +332,8 @@ func TestPoolCreation(t *testing.T) {
 			},
 			expectedRemainingNodes:  []int{0},
 			expectedFirstNodeMemory: memoryUnspec,
+			expectedLeafNodeCPUs:    20,
+			expectedRootNodeCPUs:    20,
 		},
 		{
 			path: path.Join(dir, "sysfs", "server", "sys"),
@@ -336,8 +344,11 @@ func TestPoolCreation(t *testing.T) {
 				memType:   memoryDRAM,
 				container: &mockContainer{},
 			},
-			expectedRemainingNodes:  []int{0, 1, 2, 3, 4, 5, 6},
-			expectedFirstNodeMemory: memoryDRAM,
+			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
+			// TODO: why not just memoryDRAM?
+			expectedFirstNodeMemory: memoryDRAM | memoryPMEM,
+			expectedLeafNodeCPUs:    28,
+			expectedRootNodeCPUs:    112,
 		},
 		{
 			path: path.Join(dir, "sysfs", "server", "sys"),
@@ -350,6 +361,141 @@ func TestPoolCreation(t *testing.T) {
 			},
 			expectedRemainingNodes:  []int{0, 1, 2, 3, 4, 5, 6},
 			expectedFirstNodeMemory: memoryDRAM | memoryPMEM,
+			expectedLeafNodeCPUs:    28,
+			expectedRootNodeCPUs:    112,
+		},
+	}
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			sys, err := system.DiscoverSystemAt(tc.path)
+			if err != nil {
+				panic(err)
+			}
+
+			policy := &policy{
+				sys:   sys,
+				cache: &mockCache{},
+			}
+
+			err = policy.buildPoolsByTopology()
+			if err != nil {
+				panic(err)
+			}
+
+			if policy.root.GetSupply().SharableCPUs().Size() != tc.expectedRootNodeCPUs {
+				t.Errorf("Expected %d CPUs, got %d", tc.expectedRootNodeCPUs, policy.root.GetSupply().SharableCPUs().Size())
+			}
+
+			for _, p := range policy.pools {
+				if p.IsLeafNode() {
+					if len(p.Children()) != 0 {
+						t.Errorf("Leaf node %v had %d children", p, len(p.Children()))
+					}
+					if p.GetSupply().SharableCPUs().Size()+p.GetSupply().IsolatedCPUs().Size() != tc.expectedLeafNodeCPUs {
+						t.Errorf("Expected %d CPUs, got %d (%s)", tc.expectedLeafNodeCPUs, p.GetSupply().SharableCPUs().Size()+p.GetSupply().IsolatedCPUs().Size(), p.GetSupply())
+					}
+				}
+			}
+
+			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
+			fmt.Printf("scores: %v, remaining pools: %v\n", scores, filteredPools)
+
+			if len(filteredPools) != len(tc.expectedRemainingNodes) {
+				t.Errorf("Wrong number of nodes in the filtered pool: expected %d but got %d", len(tc.expectedRemainingNodes), len(filteredPools))
+			}
+
+			for _, id := range tc.expectedRemainingNodes {
+				found := false
+				for _, node := range filteredPools {
+					if node.NodeID() == id {
+						fmt.Println("node id:", node.NodeID())
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Did not find id %d in filtered pools: %s", id, filteredPools)
+				}
+			}
+
+			if filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
+				t.Errorf("Expected first node memory type %v, got %v", tc.expectedFirstNodeMemory, filteredPools[0].GetMemoryType())
+			}
+		})
+	}
+}
+
+func TestWorkloadPlacement(t *testing.T) {
+
+	// Do some workloads (containers) and see how they are placed in the
+	// server system.
+
+	// Create a temporary directory for the test data.
+	dir, err := ioutil.TempDir("", "cri-resource-manager-test-sysfs-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Uncompress the test data to the directory.
+	file, err := os.Open(path.Join("testdata", "sysfs.tar.bz2"))
+	if err != nil {
+		panic(err)
+	}
+	err = uncompress(file, dir)
+	if err != nil {
+		panic(err)
+	}
+
+	tcases := []struct {
+		path                   string
+		name                   string
+		req                    Request
+		affinities             map[int]int32
+		expectedRemainingNodes []int
+		expectedLeafNode       bool
+	}{
+		{
+			path: path.Join(dir, "sysfs", "server", "sys"),
+			name: "workload placement on a server system leaf node",
+			req: &request{
+				memReq:    10000,
+				memLim:    10000,
+				memType:   memoryUnspec,
+				isolate:   false,
+				full:      28,
+				container: &mockContainer{},
+			},
+			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
+			expectedLeafNode:       true,
+		},
+		{
+			path: path.Join(dir, "sysfs", "server", "sys"),
+			name: "workload placement on a server system root node: CPUs don't fit to leaf",
+			req: &request{
+				memReq:    10000,
+				memLim:    10000,
+				memType:   memoryUnspec,
+				isolate:   false,
+				full:      29,
+				container: &mockContainer{},
+			},
+			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
+			expectedLeafNode:       false,
+		},
+		{
+			path: path.Join(dir, "sysfs", "server", "sys"),
+			name: "workload placement on a server system root node: memory doesn't fit to leaf",
+			req: &request{
+				memReq:    50000000000,
+				memLim:    50000000000,
+				memType:   memoryUnspec,
+				isolate:   false,
+				full:      28,
+				container: &mockContainer{},
+			},
+			expectedRemainingNodes: []int{2, 5, 6},
+			expectedLeafNode:       false,
 		},
 	}
 	for _, tc := range tcases {
@@ -389,9 +535,8 @@ func TestPoolCreation(t *testing.T) {
 					t.Errorf("Did not find id %d in filtered pools: %s", id, filteredPools)
 				}
 			}
-
-			if filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
-				t.Errorf("Expected first node memory type %v, got %v", tc.expectedFirstNodeMemory, filteredPools[0].GetMemoryType())
+			if filteredPools[0].IsLeafNode() != tc.expectedLeafNode {
+				t.Errorf("Workload should have been placed in a leaf node: %t", tc.expectedLeafNode)
 			}
 		})
 	}
