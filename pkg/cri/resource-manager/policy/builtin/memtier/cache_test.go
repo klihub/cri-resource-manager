@@ -88,11 +88,11 @@ func TestAllocationMarshalling(t *testing.T) {
 	}{
 		{
 			name: "non-zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":""}}`),
+			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":{}}}`),
 		},
 		{
 			name: "zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":""}}`),
+			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":{}}}`),
 		},
 	}
 	for _, tc := range tcases {
@@ -104,8 +104,8 @@ func TestAllocationMarshalling(t *testing.T) {
 							node: node{
 								name:    "testnode",
 								kind:    UnknownNode,
-								noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-								freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+								noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+								freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
 							},
 						},
 					},

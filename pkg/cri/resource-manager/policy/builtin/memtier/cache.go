@@ -34,7 +34,25 @@ func (p *policy) saveAllocations() {
 }
 
 func (p *policy) restoreAllocations() bool {
-	return p.cache.GetPolicyEntry(keyAllocations, &p.allocations)
+	// Get the allocations map.
+	success := p.cache.GetPolicyEntry(keyAllocations, &p.allocations)
+	// Based on the allocations, set the extra memory allocations to the nodes
+	// below the grant in the tree. We assume (for now) that the allocations are
+	// correct and the workloads don't need moving.
+	if success {
+		for _, grant := range p.allocations.grants {
+			pool := grant.GetMemoryNode()
+			pool.DepthFirst(func(n Node) error {
+				if !n.IsSameNode(pool) {
+					supply := n.FreeSupply()
+					supply.SetExtraMemoryReservation(grant)
+				}
+				return nil
+			})
+			return success
+		}
+	}
+	return success
 }
 
 func (p *policy) saveConfig() error {
@@ -55,12 +73,14 @@ func (p *policy) restoreConfig() bool {
 }
 
 type cachedGrant struct {
-	Exclusive string
-	Part      int
-	Container string
-	Pool      string
-	MemType   memoryType
-	Memset    system.IDSet
+	Exclusive   string
+	Part        int
+	Container   string
+	Pool        string
+	MemoryPool  string
+	MemType     memoryType
+	Memset      system.IDSet
+	MemoryLimit memoryMap
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -68,9 +88,15 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.SharedPortion()
 	ccg.Container = cg.GetContainer().GetCacheID()
-	ccg.Pool = cg.GetNode().Name()
+	ccg.Pool = cg.GetCPUNode().Name()
+	ccg.MemoryPool = cg.GetMemoryNode().Name()
 	ccg.MemType = cg.MemoryType()
 	ccg.Memset = cg.Memset().Clone()
+
+	ccg.MemoryLimit = make(memoryMap)
+	for key, value := range cg.MemLimit() {
+		ccg.MemoryLimit[key] = value
+	}
 
 	return ccg
 }
@@ -91,6 +117,7 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
+		ccg.MemoryLimit,
 	)
 
 	if g.Memset().String() != ccg.Memset.String() {
@@ -119,7 +146,7 @@ func (cg *grant) UnmarshalJSON(data []byte) error {
 
 func (a *allocations) MarshalJSON() ([]byte, error) {
 	cgrants := make(map[string]*cachedGrant)
-	for id, cg := range a.CPU {
+	for id, cg := range a.grants {
 		cgrants[id] = newCachedGrant(cg)
 	}
 
@@ -134,14 +161,14 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 		return policyError("failed to restore allocations: %v", err)
 	}
 
-	a.CPU = make(map[string]Grant, 32)
+	a.grants = make(map[string]Grant, 32)
 	for id, ccg := range cgrants {
-		a.CPU[id], err = ccg.ToGrant(a.policy)
+		a.grants[id], err = ccg.ToGrant(a.policy)
 		if err != nil {
 			log.Error("removing unresolvable cached grant %v: %v", *ccg, err)
-			delete(a.CPU, id)
+			delete(a.grants, id)
 		} else {
-			log.Debug("resolved cache grant: %v", a.CPU[id].String())
+			log.Debug("resolved cache grant: %v", a.grants[id].String())
 		}
 	}
 
@@ -163,14 +190,14 @@ func (a *allocations) Set(value interface{}) {
 		from = value.(*allocations)
 	}
 
-	a.CPU = make(map[string]Grant, 32)
-	for id, cg := range from.CPU {
-		a.CPU[id] = cg
+	a.grants = make(map[string]Grant, 32)
+	for id, cg := range from.grants {
+		a.grants[id] = cg
 	}
 }
 
 func (a *allocations) Dump(logfn func(format string, args ...interface{}), prefix string) {
-	for _, cg := range a.CPU {
+	for _, cg := range a.grants {
 		logfn(prefix+"%s", cg)
 	}
 }

@@ -24,6 +24,11 @@ import (
 	"path"
 	"testing"
 
+	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
+
+	v1 "k8s.io/api/core/v1"
+	resapi "k8s.io/apimachinery/pkg/api/resource"
+
 	system "github.com/intel/cri-resource-manager/pkg/sysfs"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
@@ -105,14 +110,14 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
 			},
 			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 10001},
+				&mockSystemNode{id: 0, memFree: 10001, memTotal: 10001},
 			},
 			req: &request{
 				memReq:    10000,
@@ -131,14 +136,14 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(9999, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(9999, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
 			},
 			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 9999},
+				&mockSystemNode{id: 0, memFree: 9999, memTotal: 9999},
 			},
 			req: &request{
 				memReq:    10000,
@@ -157,8 +162,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 				},
 				&numanode{
@@ -166,14 +171,14 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      101,
 						name:    "testnode1",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
 			},
 			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 10001},
+				&mockSystemNode{id: 0, memFree: 10001, memTotal: 10001},
 			},
 			req: &request{
 				memReq:    10000,
@@ -192,8 +197,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(12000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(12000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 				},
 				&numanode{
@@ -201,8 +206,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      101,
 						name:    "testnode1",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
@@ -211,15 +216,15 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      102,
 						name:    "testnode2",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 1, // system node id
 				},
 			},
 			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 6000},
-				&mockSystemNode{id: 1, memFree: 6000},
+				&mockSystemNode{id: 0, memFree: 6000, memTotal: 6000},
+				&mockSystemNode{id: 1, memFree: 6000, memTotal: 6000},
 			},
 			req: &request{
 				memReq:    10000,
@@ -320,6 +325,7 @@ func TestPoolCreation(t *testing.T) {
 		expectedFirstNodeMemory memoryType
 		expectedLeafNodeCPUs    int
 		expectedRootNodeCPUs    int
+		// TODO: expectedRootNodeMemory   int
 	}{
 		{
 			path: path.Join(dir, "sysfs", "desktop", "sys"),
@@ -327,7 +333,7 @@ func TestPoolCreation(t *testing.T) {
 			req: &request{
 				memReq:    10000,
 				memLim:    10000,
-				memType:   memoryUnspec,
+				memType:   memoryAll,
 				container: &mockContainer{},
 			},
 			expectedRemainingNodes:  []int{0},
@@ -344,8 +350,7 @@ func TestPoolCreation(t *testing.T) {
 				memType:   memoryDRAM,
 				container: &mockContainer{},
 			},
-			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
-			// TODO: why not just memoryDRAM?
+			expectedRemainingNodes:  []int{0, 1, 2, 3, 4, 5, 6},
 			expectedFirstNodeMemory: memoryDRAM | memoryPMEM,
 			expectedLeafNodeCPUs:    28,
 			expectedRootNodeCPUs:    112,
@@ -408,7 +413,6 @@ func TestPoolCreation(t *testing.T) {
 				found := false
 				for _, node := range filteredPools {
 					if node.NodeID() == id {
-						fmt.Println("node id:", node.NodeID())
 						found = true
 						break
 					}
@@ -418,7 +422,7 @@ func TestPoolCreation(t *testing.T) {
 				}
 			}
 
-			if filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
+			if len(filteredPools) > 0 && filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
 				t.Errorf("Expected first node memory type %v, got %v", tc.expectedFirstNodeMemory, filteredPools[0].GetMemoryType())
 			}
 		})
@@ -487,14 +491,14 @@ func TestWorkloadPlacement(t *testing.T) {
 			path: path.Join(dir, "sysfs", "server", "sys"),
 			name: "workload placement on a server system root node: memory doesn't fit to leaf",
 			req: &request{
-				memReq:    50000000000,
-				memLim:    50000000000,
+				memReq:    190000000000,
+				memLim:    190000000000,
 				memType:   memoryUnspec,
 				isolate:   false,
 				full:      28,
 				container: &mockContainer{},
 			},
-			expectedRemainingNodes: []int{2, 5, 6},
+			expectedRemainingNodes: []int{2, 6},
 			expectedLeafNode:       false,
 		},
 	}
@@ -526,7 +530,6 @@ func TestWorkloadPlacement(t *testing.T) {
 				found := false
 				for _, node := range filteredPools {
 					if node.NodeID() == id {
-						fmt.Println("node id:", node.NodeID())
 						found = true
 						break
 					}
@@ -537,6 +540,174 @@ func TestWorkloadPlacement(t *testing.T) {
 			}
 			if filteredPools[0].IsLeafNode() != tc.expectedLeafNode {
 				t.Errorf("Workload should have been placed in a leaf node: %t", tc.expectedLeafNode)
+			}
+		})
+	}
+}
+
+func TestContainerMove(t *testing.T) {
+
+	// In case there's not enough memory to guarantee that the
+	// containers running on child nodes won't get OOM killed, they need
+	// to be moved upwards in the tree.
+
+	// Create a temporary directory for the test data.
+	dir, err := ioutil.TempDir("", "cri-resource-manager-test-sysfs-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Uncompress the test data to the directory.
+	file, err := os.Open(path.Join("testdata", "sysfs.tar.bz2"))
+	if err != nil {
+		panic(err)
+	}
+	err = uncompress(file, dir)
+	if err != nil {
+		panic(err)
+	}
+
+	tcases := []struct {
+		path                          string
+		name                          string
+		container1                    cache.Container
+		container2                    cache.Container
+		container3                    cache.Container
+		affinities                    map[int]int32
+		expectedLeafNodeForContainer1 bool
+		expectedLeafNodeForContainer2 bool
+		expectedLeafNodeForContainer3 bool
+		expectedChangeForContainer1   bool
+		expectedChangeForContainer2   bool
+		expectedChangeForContainer3   bool
+	}{
+		{
+			path: path.Join(dir, "sysfs", "server", "sys"),
+			name: "workload placement on a server system leaf node",
+			container1: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("1000"),
+					},
+				},
+				returnValueForGetCacheID: "first",
+			},
+			container2: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("1000"),
+					},
+				},
+				returnValueForGetCacheID: "second",
+			},
+			container3: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("1000"),
+					},
+				},
+				returnValueForGetCacheID: "third",
+			},
+			expectedLeafNodeForContainer1: true,
+			expectedLeafNodeForContainer2: true,
+			expectedLeafNodeForContainer3: true,
+		},
+		{
+			path: path.Join(dir, "sysfs", "server", "sys"),
+			name: "workload placement on a server system non-leaf node",
+			container1: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("1000"),
+					},
+				},
+				returnValueForGetCacheID: "first",
+			},
+			container2: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("190000000000"), // 800 GB
+					},
+				},
+				returnValueForGetCacheID: "second",
+			},
+			container3: &mockContainer{
+				returnValueForGetResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resapi.MustParse("2"),
+						v1.ResourceMemory: resapi.MustParse("140000000000"), // 900 GB
+					},
+				},
+				returnValueForGetCacheID: "third",
+			},
+			expectedLeafNodeForContainer1: false,
+			expectedLeafNodeForContainer2: false,
+			expectedLeafNodeForContainer3: true,
+			expectedChangeForContainer1:   true,
+		},
+	}
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			sys, err := system.DiscoverSystemAt(tc.path)
+			if err != nil {
+				panic(err)
+			}
+
+			policy := &policy{
+				sys:   sys,
+				cache: &mockCache{},
+				allocations: allocations{
+					grants: make(map[string]Grant),
+				},
+			}
+			policy.allocations.policy = policy
+
+			err = policy.buildPoolsByTopology()
+			if err != nil {
+				panic(err)
+			}
+			grant1, err := policy.allocatePool(tc.container1)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("grant 1 memsets: dram %s, pmem %s\n", grant1.GetMemoryNode().GetMemset(memoryDRAM), grant1.GetMemoryNode().GetMemset(memoryPMEM))
+
+			grant2, err := policy.allocatePool(tc.container2)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("grant 2 memsets: dram %s, pmem %s\n", grant2.GetMemoryNode().GetMemset(memoryDRAM), grant2.GetMemoryNode().GetMemset(memoryPMEM))
+
+			grant3, err := policy.allocatePool(tc.container3)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("grant 3 memsets: dram %s, pmem %s\n", grant3.GetMemoryNode().GetMemset(memoryDRAM), grant3.GetMemoryNode().GetMemset(memoryPMEM))
+
+			if (grant1.GetCPUNode().IsSameNode(grant1.GetMemoryNode())) && tc.expectedChangeForContainer1 {
+				t.Errorf("Workload 1 should have been relocated: %t, node: %s", tc.expectedChangeForContainer1, grant1.GetMemoryNode().Name())
+			}
+			if (grant2.GetCPUNode().IsSameNode(grant2.GetMemoryNode())) && tc.expectedChangeForContainer2 {
+				t.Errorf("Workload 2 should have been relocated: %t, node: %s", tc.expectedChangeForContainer2, grant2.GetMemoryNode().Name())
+			}
+			if (grant3.GetCPUNode().IsSameNode(grant3.GetMemoryNode())) && tc.expectedChangeForContainer3 {
+				t.Errorf("Workload 3 should have been relocated: %t, node: %s", tc.expectedChangeForContainer3, grant3.GetMemoryNode().Name())
+			}
+
+			if grant1.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer1 {
+				t.Errorf("Workload 1 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer1, grant1.GetMemoryNode().Name())
+			}
+			if grant2.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer2 {
+				t.Errorf("Workload 2 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer2, grant2.GetMemoryNode().Name())
+			}
+			if grant3.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer3 {
+				t.Errorf("Workload 3 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer3, grant3.GetMemoryNode().Name())
 			}
 		})
 	}

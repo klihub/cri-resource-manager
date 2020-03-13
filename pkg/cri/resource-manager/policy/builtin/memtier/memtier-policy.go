@@ -15,6 +15,8 @@
 package memtier
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -38,10 +40,10 @@ const (
 // allocations is our cache.Cachable for saving resource allocations in the cache.
 type allocations struct {
 	policy *policy
-	CPU    map[string]Grant
+	grants map[string]Grant
 }
 
-// policy is our runtime state for the topology aware policy.
+// policy is our runtime state for the memtier policy.
 type policy struct {
 	options     policyapi.BackendOptions // options we were created or reconfigured with
 	cache       cache.Cache              // pod/container cache
@@ -56,7 +58,6 @@ type policy struct {
 	nodeCnt     int                      // number of pools
 	depth       int                      // tree depth
 	allocations allocations              // container pool assignments
-
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -71,14 +72,14 @@ func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend
 	}
 
 	p.nodes = make(map[string]Node)
-	p.allocations = allocations{policy: p, CPU: make(map[string]Grant, 32)}
+	p.allocations = allocations{policy: p, grants: make(map[string]Grant, 32)}
 
 	if err := p.checkConstraints(); err != nil {
-		log.Fatal("failed to create topology-aware policy: %v", err)
+		log.Fatal("failed to create memtier policy: %v", err)
 	}
 
 	if err := p.buildPoolsByTopology(); err != nil {
-		log.Fatal("failed to create topology-aware policy: %v", err)
+		log.Fatal("failed to create memtier policy: %v", err)
 	}
 
 	p.addImplicitAffinities()
@@ -208,14 +209,14 @@ func (p *policy) Rebalance() (bool, error) {
 
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
-	grant, ok := p.allocations.CPU[c.GetCacheID()]
+	grant, ok := p.allocations.grants[c.GetCacheID()]
 	if !ok {
 		return nil
 	}
 
 	data := map[string]string{}
 	shared := grant.SharedCPUs().String()
-	isolated := grant.ExclusiveCPUs().Intersection(grant.GetNode().GetSupply().IsolatedCPUs())
+	isolated := grant.ExclusiveCPUs().Intersection(grant.GetCPUNode().GetSupply().IsolatedCPUs())
 	exclusive := grant.ExclusiveCPUs().Difference(isolated).String()
 
 	if shared != "" {
@@ -274,6 +275,65 @@ func (p *policy) configNotify(event config.Event, source config.Source) error {
 	p.saveConfig()
 
 	return nil
+}
+
+func (p *policy) expandMemset(g Grant) (bool, error) {
+	supply := g.GetMemoryNode().FreeSupply()
+	mems := g.MemLimit()
+	node := g.GetMemoryNode()
+	parent := node.Parent()
+
+	// We have to assume that the memory has been allocated how we granted it (if PMEM ran out
+	// the allocations have been made from DRAM and so on).
+
+	// Figure out if there is enough memory now to have grant as-is.
+	fits := true
+	for memType, limit := range mems {
+		if limit > 0 {
+			// This memory type was granted.
+			extra := supply.ExtraMemoryReservation(memType)
+			granted := supply.GrantedMemory(memType)
+			limit := supply.MemoryLimit()[memType]
+
+			if extra+granted > limit {
+				log.Debug("%s: extra():%d + granted(): %d > limit: %d -> moving from %s to %s", memType, extra, granted, limit, node.Name(), parent.Name())
+				fits = false
+				break
+			}
+		}
+	}
+
+	if fits {
+		return false, nil
+	}
+	// Else it doesn't fit, so move the grant up in the memory tree.
+
+	if parent.IsNil() {
+		return false, fmt.Errorf("trying to move a grant up past the root of the tree")
+	}
+
+	// Release granted memory from the node and allocate it from the parent node.
+	err := parent.FreeSupply().ReallocateMemory(g)
+	if err != nil {
+		return false, err
+	}
+	g.SetMemoryNode(parent)
+
+	// For every subnode, make sure that this grant is added to the extra memory allocation.
+	parent.DepthFirst(func(n Node) error {
+		// No extra allocation should be done to the node itself.
+		if !n.IsSameNode(parent) {
+			supply := n.FreeSupply()
+			supply.SetExtraMemoryReservation(g)
+		}
+		return nil
+	})
+
+	// Make the container to use the new memory set.
+	// FIXME: this could be done in a second pass to avoid doing this many times
+	p.applyGrant(g)
+
+	return true, nil
 }
 
 // Check the constraints passed to us.
