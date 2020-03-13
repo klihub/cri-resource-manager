@@ -15,6 +15,7 @@
 package memtier
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
@@ -102,8 +103,9 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	if container.GetNamespace() == kubernetes.NamespaceSystem {
 		pool = p.root
 	} else {
+		infos := make(map[system.ID]*system.MemInfo)
 		affinity := p.calculatePoolAffinities(request.GetContainer())
-		scores, pools := p.sortPoolsByScore(request, affinity)
+		scores, pools := p.sortPoolsByScore(infos, request, affinity)
 
 		if log.DebugEnabled() {
 			log.Debug("* node fitting for %s", request)
@@ -116,13 +118,189 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 		pool = pools[0]
 	}
 
-	cpus := pool.FreeSupply()
-	grant, err := cpus.Allocate(request)
+	supply := pool.FreeSupply()
+	grant, err := supply.Allocate(request)
 	if err != nil {
-		return nil, policyError("failed to allocate %s from %s: %v", request, cpus, err)
+		return nil, policyError("failed to allocate %s from %s: %v", request, supply, err)
 	}
 
-	p.allocations.CPU[container.GetCacheID()] = grant
+	// In case the workload is assigned to a node with multiple
+	// child nodes, there is no guarantee that the workload will
+	// allocate memory "nicely". Instead we'll have to make the
+	// conservative assumption that the memory will all be allocated
+	// from one single node, and that node can be any of the child
+	// nodes in the system. Thus, we'll need to reserve the memory
+	// from all child nodes, and move the containers already
+	// assigned to the child nodes upwards in the topology tree, if
+	// they no longer fit to the child node that they are in. In
+	// other words, they'll need to have a wider range of memory
+	// node options in order to fit to memory.
+	//
+	//
+	// Example:
+	//
+	// Workload 1 and Workload 2 are running on the leaf nodes:
+	//
+	//                    +----------------+
+	//                    |Total mem: 4G   |
+	//                    |Total CPUs: 4   |            Workload 1:
+	//                    |Reserved:       |             1 CPUs
+	//                    |  1.5G, 2 CPUs  |             1G mem
+	//                    |                |
+	//                    |                |            Workload 2:
+	//                    |                |             1 CPUs
+	//                    +----------------+             0.5G mem
+	//                       /          \
+	//                      /            \
+	//                     /              \
+	//                    /                \
+	//                   /                  \
+	//                  /                    \
+	//                 /                      \
+	//                /                        \
+	//  +----------------+                  +----------------+
+	//  |Total mem: 2G   |                  |Total mem: 2G   |
+	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
+	//  |Reserved:       |                  |Reserved:       |
+	//  |  1G, 1 CPU     |                  |  0.5G, 1 CPU   |
+	//  |                |                  |                |
+	//  |                |                  |                |
+	//  |     * WL 1     |                  |     * WL 2     |
+	//  +----------------+                  +----------------+
+	//
+	//
+	// Then Workload 3 comes in and is assigned to the root node. Memory
+	// reservations are done on the leaf nodes:
+	//
+	//                    +----------------+
+	//                    |Total mem: 4G   |
+	//                    |Total CPUs: 4   |            Workload 1:
+	//                    |Reserved:       |             1 CPUs
+	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |                |
+	//                    |                |            Workload 2:
+	//                    |  * WL 3        |             1 CPUs
+	//                    +----------------+             0.5G mem
+	//                       /          \
+	//                      /            \              Workload 3:
+	//                     /              \              1 CPUs
+	//                    /                \             1.5G mem
+	//                   /                  \
+	//                  /                    \
+	//                 /                      \
+	//                /                        \
+	//  +----------------+                  +----------------+
+	//  |Total mem: 2G   |                  |Total mem: 2G   |
+	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
+	//  |Reserved:       |                  |Reserved:       |
+	//  |  2.5G, 1 CPU   |                  |  2G, 1 CPU     |
+	//  |                |                  |                |
+	//  |                |                  |                |
+	//  |     * WL 1     |                  |     * WL 2     |
+	//  +----------------+                  +----------------+
+	//
+	//
+	// Workload 1 no longer fits to the leaf node, because the total
+	// reservation from the leaf node is over the memory maximum.
+	// Thus, it's moved upwards in the tree to the root node. Memory
+	// resevations are again updated accordingly:
+	//
+	//                    +----------------+
+	//                    |Total mem: 4G   |
+	//                    |Total CPUs: 4   |            Workload 1:
+	//                    |Reserved:       |             1 CPUs
+	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |                |
+	//                    |  * WL 1        |            Workload 2:
+	//                    |  * WL 3        |             1 CPUs
+	//                    +----------------+             0.5G mem
+	//                       /          \
+	//                      /            \              Workload 3:
+	//                     /              \              1 CPUs
+	//                    /                \             1.5G mem
+	//                   /                  \
+	//                  /                    \
+	//                 /                      \
+	//                /                        \
+	//  +----------------+                  +----------------+
+	//  |Total mem: 2G   |                  |Total mem: 2G   |
+	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
+	//  |Reserved:       |                  |Reserved:       |
+	//  |  2.5G, 0 CPU   |                  |  3G, 1 CPU     |
+	//  |                |                  |                |
+	//  |                |                  |                |
+	//  |                |                  |     * WL 2     |
+	//  +----------------+                  +----------------+
+	//
+	//
+	// Now Workload 2 doesn't fit to the leaf node either. It's also moved
+	// to the root node:
+	//
+	//                    +----------------+
+	//                    |Total mem: 4G   |
+	//                    |Total CPUs: 4   |            Workload 1:
+	//                    |Reserved:       |             1 CPUs
+	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |  * WL 2        |
+	//                    |  * WL 1        |            Workload 2:
+	//                    |  * WL 3        |             1 CPUs
+	//                    +----------------+             0.5G mem
+	//                       /          \
+	//                      /            \              Workload 3:
+	//                     /              \              1 CPUs
+	//                    /                \             1.5G mem
+	//                   /                  \
+	//                  /                    \
+	//                 /                      \
+	//                /                        \
+	//  +----------------+                  +----------------+
+	//  |Total mem: 2G   |                  |Total mem: 2G   |
+	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
+	//  |Reserved:       |                  |Reserved:       |
+	//  |  3G, 0 CPU     |                  |  3G, 0 CPU     |
+	//  |                |                  |                |
+	//  |                |                  |                |
+	//  |                |                  |                |
+	//  +----------------+                  +----------------+
+	//
+
+	changed := true
+	for changed {
+		changed = false
+		pool.DepthFirst(func(n Node) error {
+			// See how much memory reservations the workloads on the
+			// nodes up from this one cause to the node.
+
+			// If it turns out that the current workloads no longer fit
+			// to the node with the reservations from nodes from above
+			// in the tree, move all nodes upward. Note that this
+			// creates a reservation of the same size to the node, so in
+			// effect the node has to be empty of its "own" workloads.
+			// In this case move all the workloads one level up in the tree.
+
+			// FIXME: It would be enough to calculate the extra memory
+			// reservation once for all nodes from the leaf to the pool
+			// node.
+
+			if !n.EnoughMemory() {
+				// If the workload doesn't fit, we'll have to move
+				// all the workloads up one level and try again.
+				// This causes also the other leaf nodes to have
+				// different allocations, so need to start over.
+				changed, err = n.MoveAllWorkloadsUp()
+				if err != nil {
+					return err
+				}
+				if changed {
+					return fmt.Errorf("fake error to terminate the loop") // FIXME
+				}
+			}
+			return nil
+		})
+	}
+
+	p.allocations.grants[container.GetCacheID()] = grant
+
 	p.saveAllocations()
 
 	return grant, nil
@@ -196,7 +374,7 @@ func (p *policy) applyGrant(grant Grant) error {
 func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 	log.Debug("* releasing resources allocated to %s", container.PrettyName())
 
-	grant, ok := p.allocations.CPU[container.GetCacheID()]
+	grant, ok := p.allocations.grants[container.GetCacheID()]
 	if !ok {
 		log.Debug("  => no grant found, nothing to do...")
 		return nil, false, nil
@@ -205,10 +383,10 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 	log.Debug("  => releasing grant %s...", grant)
 
 	pool := grant.GetNode()
-	cpus := pool.FreeSupply()
+	supply := pool.FreeSupply()
 
-	cpus.Release(grant)
-	delete(p.allocations.CPU, container.GetCacheID())
+	supply.Release(grant)
+	delete(p.allocations.grants, container.GetCacheID())
 	p.saveAllocations()
 
 	return grant, true, nil
@@ -218,7 +396,7 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 func (p *policy) updateSharedAllocations(grant Grant) error {
 	log.Debug("* updating shared allocations affected by %s", grant)
 
-	for _, other := range p.allocations.CPU {
+	for _, other := range p.allocations.grants {
 		if other.SharedPortion() == 0 {
 			log.Debug("  => %s not affected (no shared portion)...", other)
 			continue
@@ -261,7 +439,7 @@ func (p *policy) calculatePoolAffinities(container cache.Container) map[int]int3
 
 	result := make(map[int]int32, len(p.nodes))
 	for id, w := range p.calculateContainerAffinity(container) {
-		grant, ok := p.allocations.CPU[id]
+		grant, ok := p.allocations.grants[id]
 		if !ok {
 			continue
 		}
@@ -290,38 +468,41 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 	return result
 }
 
-// Find the amount of free memory for this node and all its children. The lookups are cahced in the "infos" map.
-func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInfo) (uint64, error) {
+// Find the amount of free memory for this node and all its children. The lookups are cached in the "infos" map.
+func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInfo) (uint64, uint64, error) {
 	free := uint64(0)
+	total := uint64(0)
 	ids := node.GetPhysicalNodeIDs()
 
 	for _, id := range ids {
 		if memInfo, found := infos[id]; found {
 			free += memInfo.MemFree
+			total += memInfo.MemTotal
 		} else {
 			numaNode := p.sys.Node(id)
 			memInfo, err := numaNode.MemoryInfo()
 			if err != nil {
-				return 0, err
+				return 0, 0, err
 			}
 			infos[id] = memInfo
 			free += memInfo.MemFree
+			total += memInfo.MemTotal
 		}
 	}
 
-	return free, nil
+	return total, free, nil
 }
 
-func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
+func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo, req Request, originals []Node) []Node {
 	filtered := make([]Node, 0)
 
-	infos := make(map[system.ID]*system.MemInfo)
 	for _, node := range originals {
-		nodeFreeMemory, err := p.getNodeFreeMemory(node, infos)
+		nodeTotalMemory, _, err := p.getNodeFreeMemory(node, infos)
+		supply := node.FreeSupply()
 		if err != nil {
 			continue
 		}
-		if req.GetMemLimit() < nodeFreeMemory {
+		if supply.GrantedMemory()+supply.ExtraMemoryReservation()+req.MemLimit() <= nodeTotalMemory {
 			filtered = append(filtered, node)
 		}
 	}
@@ -330,7 +511,7 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 }
 
 // Score pools against the request and sort them by score.
-func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
+func (p *policy) sortPoolsByScore(infos map[system.ID]*system.MemInfo, req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
 
 	p.root.DepthFirst(func(n Node) error {
@@ -340,7 +521,7 @@ func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score
 
 	// Filter out pools which don't have enough uncompressible resources
 	// (memory) to satisfy the request.
-	filteredPools := p.filterInsufficientResources(req, p.pools)
+	filteredPools := p.filterInsufficientResources(infos, req, p.pools)
 
 	sort.Slice(filteredPools, func(i, j int) bool {
 		return p.compareScores(req, scores, aff, i, j)

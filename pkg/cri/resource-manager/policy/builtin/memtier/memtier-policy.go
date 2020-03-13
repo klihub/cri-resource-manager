@@ -38,10 +38,10 @@ const (
 // allocations is our cache.Cachable for saving resource allocations in the cache.
 type allocations struct {
 	policy *policy
-	CPU    map[string]Grant
+	grants map[string]Grant
 }
 
-// policy is our runtime state for the topology aware policy.
+// policy is our runtime state for the memtier policy.
 type policy struct {
 	options     policyapi.BackendOptions // options we were created or reconfigured with
 	cache       cache.Cache              // pod/container cache
@@ -71,14 +71,14 @@ func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend
 	}
 
 	p.nodes = make(map[string]Node)
-	p.allocations = allocations{policy: p, CPU: make(map[string]Grant, 32)}
+	p.allocations = allocations{policy: p, grants: make(map[string]Grant, 32)}
 
 	if err := p.checkConstraints(); err != nil {
-		log.Fatal("failed to create topology-aware policy: %v", err)
+		log.Fatal("failed to create memtier policy: %v", err)
 	}
 
 	if err := p.buildPoolsByTopology(); err != nil {
-		log.Fatal("failed to create topology-aware policy: %v", err)
+		log.Fatal("failed to create memtier policy: %v", err)
 	}
 
 	p.addImplicitAffinities()
@@ -208,7 +208,7 @@ func (p *policy) Rebalance() (bool, error) {
 
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
-	grant, ok := p.allocations.CPU[c.GetCacheID()]
+	grant, ok := p.allocations.grants[c.GetCacheID()]
 	if !ok {
 		return nil
 	}

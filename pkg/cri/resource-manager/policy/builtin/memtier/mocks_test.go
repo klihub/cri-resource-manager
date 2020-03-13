@@ -27,12 +27,13 @@ import (
 )
 
 type mockSystemNode struct {
-	id      system.ID // node id
-	memFree uint64
+	id       system.ID // node id
+	memFree  uint64
+	memTotal uint64
 }
 
 func (fake *mockSystemNode) MemoryInfo() (*system.MemInfo, error) {
-	return &system.MemInfo{MemFree: fake.memFree}, nil
+	return &system.MemInfo{MemFree: fake.memFree, MemTotal: fake.memTotal}, nil
 }
 
 func (fake *mockSystemNode) PackageID() system.ID {
@@ -193,6 +194,8 @@ type mockContainer struct {
 	namespace                             string
 	returnValueForGetResourceRequirements v1.ResourceRequirements
 	returnValueForGetCacheID              string
+	memoryLimit                           int64
+	cpuset                                cpuset.CPUSet
 }
 
 func (m *mockContainer) PrettyName() string {
@@ -347,13 +350,13 @@ func (m *mockContainer) GetCPUShares() int64 {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetMemoryLimit() int64 {
-	panic("unimplemented")
+	return m.memoryLimit
 }
 func (m *mockContainer) GetOomScoreAdj() int64 {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetCpusetCpus() string {
-	panic("unimplemented")
+	return m.cpuset.String()
 }
 func (m *mockContainer) GetCpusetMems() string {
 	panic("unimplemented")
@@ -378,7 +381,6 @@ func (m *mockContainer) SetOomScoreAdj(int64) {
 func (m *mockContainer) SetCpusetCpus(string) {
 }
 func (m *mockContainer) SetCpusetMems(string) {
-	panic("unimplemented")
 }
 func (m *mockContainer) UpdateCriCreateRequest(*cri.CreateContainerRequest) error {
 	panic("unimplemented")
@@ -589,7 +591,7 @@ func (m *mockCache) GetConfig() *config.RawConfig {
 	panic("unimplemented")
 }
 func (m *mockCache) Save() error {
-	panic("unimplemented")
+	return nil
 }
 func (m *mockCache) Refresh(interface{}) ([]cache.Pod, []cache.Pod, []cache.Container, []cache.Container) {
 	panic("unimplemented")

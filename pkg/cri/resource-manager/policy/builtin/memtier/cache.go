@@ -55,12 +55,13 @@ func (p *policy) restoreConfig() bool {
 }
 
 type cachedGrant struct {
-	Exclusive string
-	Part      int
-	Container string
-	Pool      string
-	MemType   memoryType
-	Memset    system.IDSet
+	Exclusive   string
+	Part        int
+	Container   string
+	Pool        string
+	MemType     memoryType
+	Memset      system.IDSet
+	MemoryLimit uint64
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -71,6 +72,7 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Pool = cg.GetNode().Name()
 	ccg.MemType = cg.MemoryType()
 	ccg.Memset = cg.Memset().Clone()
+	ccg.MemoryLimit = cg.MemLimit()
 
 	return ccg
 }
@@ -86,11 +88,13 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 	}
 
 	g := newGrant(
+		nil, // FIXME: where to get the request corresponding to this grant?
 		node,
 		container,
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
+		ccg.MemoryLimit,
 	)
 
 	if g.Memset().String() != ccg.Memset.String() {
@@ -119,7 +123,7 @@ func (cg *grant) UnmarshalJSON(data []byte) error {
 
 func (a *allocations) MarshalJSON() ([]byte, error) {
 	cgrants := make(map[string]*cachedGrant)
-	for id, cg := range a.CPU {
+	for id, cg := range a.grants {
 		cgrants[id] = newCachedGrant(cg)
 	}
 
@@ -134,14 +138,14 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 		return policyError("failed to restore allocations: %v", err)
 	}
 
-	a.CPU = make(map[string]Grant, 32)
+	a.grants = make(map[string]Grant, 32)
 	for id, ccg := range cgrants {
-		a.CPU[id], err = ccg.ToGrant(a.policy)
+		a.grants[id], err = ccg.ToGrant(a.policy)
 		if err != nil {
 			log.Error("removing unresolvable cached grant %v: %v", *ccg, err)
-			delete(a.CPU, id)
+			delete(a.grants, id)
 		} else {
-			log.Debug("resolved cache grant: %v", a.CPU[id].String())
+			log.Debug("resolved cache grant: %v", a.grants[id].String())
 		}
 	}
 
@@ -163,14 +167,14 @@ func (a *allocations) Set(value interface{}) {
 		from = value.(*allocations)
 	}
 
-	a.CPU = make(map[string]Grant, 32)
-	for id, cg := range from.CPU {
-		a.CPU[id] = cg
+	a.grants = make(map[string]Grant, 32)
+	for id, cg := range from.grants {
+		a.grants[id] = cg
 	}
 }
 
 func (a *allocations) Dump(logfn func(format string, args ...interface{}), prefix string) {
-	for _, cg := range a.CPU {
+	for _, cg := range a.grants {
 		logfn(prefix+"%s", cg)
 	}
 }

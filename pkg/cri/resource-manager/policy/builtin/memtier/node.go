@@ -111,6 +111,10 @@ type Node interface {
 
 	GetScore(Request) Score
 	HintScore(topology.Hint) float64
+
+	ToRoot(func(Node) error) error
+	EnoughMemory() bool
+	MoveAllWorkloadsUp() (bool, error)
 }
 
 // node represents data common to all node types.
@@ -123,8 +127,8 @@ type node struct {
 	depth    int          // node depth in the tree
 	parent   Node         // parent node
 	children []Node       // child nodes
-	noderes  Supply       // CPU available at this node
-	freeres  Supply       // CPU allocatable at this node
+	noderes  Supply       // CPU and memory available at this node
+	freeres  Supply       // CPU and memory allocatable at this node
 	mem      system.IDSet // controllers with normal DRAM attached
 	pMem     system.IDSet // controllers with PMEM attached
 	hbMem    system.IDSet // controllers with HBM attached
@@ -281,7 +285,7 @@ func (n *node) Dump(prefix string, level ...int) {
 	log.Debug("%s  - normal memory: %v", idt, n.mem)
 	log.Debug("%s  - HBM memory: %v", idt, n.hbMem)
 	log.Debug("%s  - PMEM memory: %v", idt, n.pMem)
-	for _, grant := range n.policy.allocations.CPU {
+	for _, grant := range n.policy.allocations.grants {
 		if grant.GetNode().NodeID() == n.id {
 			log.Debug("%s    + %s", idt, grant)
 		}
@@ -403,6 +407,83 @@ func (n *node) GetMemoryType() memoryType {
 	return memoryMask
 }
 
+// MoveAllWorkloadsUp transferes all containers from this node to its
+// parent node.
+func (n *node) MoveAllWorkloadsUp() (bool, error) {
+
+	currentSupply := n.FreeSupply()
+	parentSupply := n.parent.FreeSupply()
+	changed := false
+	p := n.policy
+
+	// Do not change the map while iterating through it.
+	newAllocations := make(map[string]Grant)
+
+	for cid, grant := range p.allocations.grants {
+		if grant.GetNode().IsSameNode(n) {
+			log.Debug("Moving container %s up to node %s", cid, n.parent)
+			req := grant.Request()
+			currentSupply.Release(grant)
+			newGrant, err := parentSupply.Allocate(req)
+			if err != nil {
+				log.Error("Failed to allocate: %s", err)
+				return false, err
+			}
+			n.Policy().applyGrant(newGrant)
+			newAllocations[cid] = newGrant
+			changed = true
+		} else {
+			log.Debug("Not moving container %s up to node %s", cid, n.parent)
+		}
+	}
+	for cid, grant := range newAllocations {
+		p.allocations.grants[cid] = grant
+	}
+
+	// Return whether any workloads were changed.
+	return changed, nil
+}
+
+// EnoughMemory returns whether there is enough memory on the node to
+// satisfy the workload requirements and the memory reservations from
+// the nodes above in the tree.
+func (n *node) EnoughMemory() bool {
+	extraMemReservation := uint64(0)
+
+	if !n.parent.IsNil() {
+		n.parent.ToRoot(func(p Node) error {
+			parentSupply := p.FreeSupply()
+			// FIXME: If "GrantedMemory()" includes memory from
+			// sub-nodes, that needs to be removed from the total to
+			// prevent double counting. A better way to do this might
+			// be to count the memory limits of all containers
+			// allocated on this node.
+			extraMemReservation += parentSupply.GrantedMemory()
+			return nil
+		})
+	}
+
+	supply := n.FreeSupply()
+
+	if supply.GrantedMemory()+extraMemReservation <= supply.MemoryLimit() {
+		return true
+	}
+
+	log.Debug("Not enough memory for node %s: granted %d, extra %d, limit %d\n", n.name, supply.GrantedMemory(), supply.ExtraMemoryReservation(), supply.MemoryLimit())
+	return false
+}
+
+func (n *node) ToRoot(fn func(Node) error) error {
+	if n.IsRootNode() {
+		return fn(n)
+	}
+	p := n.parent
+	if err := p.ToRoot(fn); err != nil {
+		return err
+	}
+	return fn(n)
+}
+
 // NewNumaNode create a node for a CPU socket.
 func (p *policy) NewNumaNode(id system.ID, parent Node) Node {
 	n := &numanode{}
@@ -433,9 +514,13 @@ func (n *numanode) DiscoverSupply() Supply {
 	log.Debug("discovering CPU available at node %s...", n.Name())
 
 	noderes := n.sysnode.CPUSet()
+	meminfo, err := n.sysnode.MemoryInfo()
+	if err != nil {
+		log.Error("Couldn't get memory info for node %s", n.Name())
+	}
 	isolated := noderes.Intersection(n.policy.isolated)
 	sharable := noderes.Difference(isolated)
-	n.noderes = newSupply(n, isolated, sharable, 0)
+	n.noderes = newSupply(n, isolated, sharable, 0, meminfo.MemTotal, 0)
 
 	n.freeres = n.noderes.Clone()
 	return n.noderes.Clone()
@@ -554,12 +639,22 @@ func (n *socketnode) DiscoverSupply() Supply {
 	log.Debug("discovering CPU available at node %s...", n.Name())
 
 	if n.IsLeafNode() {
+		normMem := uint64(0)
+		nodeIDs := n.syspkg.NodeIDs()
+		if len(nodeIDs) == 1 {
+			node := n.System().Node(nodeIDs[0])
+			memInfo, err := node.MemoryInfo()
+			if err != nil {
+				log.Error("Couldn't get memory info for node %s...", n.Name())
+			}
+			normMem = memInfo.MemTotal
+		}
 		sockcpus := n.syspkg.CPUSet()
 		isolated := sockcpus.Intersection(n.policy.isolated)
 		sharable := sockcpus.Difference(isolated)
-		n.noderes = newSupply(n, isolated, sharable, 0)
+		n.noderes = newSupply(n, isolated, sharable, 0, normMem, 0)
 	} else {
-		n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0)
+		n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0, 0)
 		for _, c := range n.children {
 			n.noderes.Cumulate(c.DiscoverSupply())
 		}
@@ -637,7 +732,7 @@ func (n *virtualnode) GetSupply() Supply {
 func (n *virtualnode) DiscoverSupply() Supply {
 	log.Debug("discovering CPU available at node %s...", n.Name())
 
-	n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0)
+	n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0, 0)
 	for _, c := range n.children {
 		n.noderes.Cumulate(c.DiscoverSupply())
 	}
