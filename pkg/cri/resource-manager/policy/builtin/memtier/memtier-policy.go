@@ -287,22 +287,27 @@ func (p *policy) expandMemset(g Grant) (bool, error) {
 	extra := supply.ExtraMemoryReservation(memType)
 	granted := supply.GrantedMemory(memType)
 	limit := supply.MemoryLimit()
-	if extra+granted < limit {
-		log.Debug("%s: extra():%d + granted(): %d < limit: %d -> not moving", memType, extra, granted, limit)
+	if extra+granted <= limit {
+		log.Debug("%s: extra():%d + granted(): %d <= limit: %d -> not moving", memType, extra, granted, limit)
 		return false, nil
 	}
-
 	// 2. If not, move the grant up in the memory tree.
 	node := g.GetMemoryNode()
 	parent := node.Parent()
+	log.Debug("%s: extra():%d + granted(): %d <= limit: %d -> moving from %s to %s", memType, extra, granted, limit, node.Name(), parent.Name())
 
 	if parent.IsNil() {
 		return false, fmt.Errorf("trying to move a grant up past the root of the tree")
 	}
 
+	// 3. Release granted memory from the node and allocate it from the parent node.
 	g.SetMemoryNode(parent)
+	err := parent.FreeSupply().ReallocateMemory(g)
+	if err != nil {
+		return false, err
+	}
 
-	// 3. For every subnode, make sure that this grant is added to the extra memory allocation.
+	// 4. For every subnode, make sure that this grant is added to the extra memory allocation.
 	parent.DepthFirst(func(n Node) error {
 		// No extra allocation should be done to the node itself.
 		if !n.IsSameNode(parent) {
@@ -312,7 +317,7 @@ func (p *policy) expandMemset(g Grant) (bool, error) {
 		return nil
 	})
 
-	// 4. Make the container to use the new memory set.
+	// 5. Make the container to use the new memory set.
 	// FIXME: this could be done in a second pass to avoid doing this many times
 	p.applyGrant(g)
 

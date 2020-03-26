@@ -50,8 +50,9 @@ type Supply interface {
 	// Allocate allocates CPU capacity from this supply and returns it as a grant.
 	Allocate(Request) (Grant, error)
 	// Release releases a previously allocated grant.
-	Release(Grant)
-
+	ReleaseCPU(Grant)
+	ReleaseMemory(g Grant)
+	ReallocateMemory(g Grant) error
 	ExtraMemoryReservation(memoryType) uint64
 	SetExtraMemoryReservation(Grant)
 	ReleaseExtraMemoryReservation(Grant)
@@ -107,8 +108,6 @@ type Grant interface {
 	// MemLimit returns the amount of memory that the container is
 	// allowed to use.
 	MemLimit() uint64
-	// Request returns the request for which this grant was made.
-	Request() Request
 	// String returns a printable representation of this grant.
 	String() string
 }
@@ -175,7 +174,6 @@ type grant struct {
 	memType    memoryType      // requested types of memory
 	memset     system.IDSet    // assigned memory nodes
 	memlimit   uint64          // memory limit
-	request    Request         // the request which was granted
 }
 
 var _ Grant = &grant{}
@@ -330,7 +328,7 @@ func (cs *supply) Allocate(r Request) (Grant, error) {
 		log.Debug("Granted mem for node %s: %d\n", cs.GetNode().Name(), cs.grantedMem)
 	}
 
-	grant := newGrant(r, cs.node, cr.GetContainer(), exclusive, cr.fraction, cr.memType, cr.memLim)
+	grant := newGrant(cs.node, cr.GetContainer(), exclusive, cr.fraction, cr.memType, cr.memLim)
 
 	cs.node.DepthFirst(func(n Node) error {
 		n.FreeSupply().AccountAllocate(grant)
@@ -340,27 +338,39 @@ func (cs *supply) Allocate(r Request) (Grant, error) {
 	return grant, nil
 }
 
-// Release returns CPU from the given grant to the supply.
-func (cs *supply) Release(g Grant) {
-	if cs.GetNode() == g.GetCPUNode() {
-		isolated := g.ExclusiveCPUs().Intersection(cs.node.GetSupply().IsolatedCPUs())
-		sharable := g.ExclusiveCPUs().Difference(isolated)
+func (cs *supply) ReallocateMemory(g Grant) error {
+	// The grant has been previously allocated from another supply. Reallocate it here.
+	g.GetMemoryNode().FreeSupply().ReleaseMemory(g)
 
-		cs.isolated = cs.isolated.Union(isolated)
-		cs.sharable = cs.sharable.Union(sharable)
-		cs.granted -= g.SharedPortion()
-
-		cs.node.DepthFirst(func(n Node) error {
-			n.FreeSupply().AccountRelease(g)
-			return nil
-		})
-	} else if cs.GetNode() == g.GetMemoryNode() {
-		cs.grantedMem -= g.MemLimit() // FIXME: allocate different memory types separately?
-		cs.node.DepthFirst(func(n Node) error {
-			n.FreeSupply().ReleaseExtraMemoryReservation(g)
-			return nil
-		})
+	if g.MemLimit() > cs.slowMem+cs.normMem+cs.fastMem-cs.grantedMem {
+		return policyError("internal error: not enough memory for reallocation")
 	}
+	cs.grantedMem += g.MemLimit()
+	return nil
+}
+
+// Release returns CPU from the given grant to the supply.
+func (cs *supply) ReleaseCPU(g Grant) {
+	isolated := g.ExclusiveCPUs().Intersection(cs.node.GetSupply().IsolatedCPUs())
+	sharable := g.ExclusiveCPUs().Difference(isolated)
+
+	cs.isolated = cs.isolated.Union(isolated)
+	cs.sharable = cs.sharable.Union(sharable)
+	cs.granted -= g.SharedPortion()
+
+	cs.node.DepthFirst(func(n Node) error {
+		n.FreeSupply().AccountRelease(g)
+		return nil
+	})
+}
+
+// ReleaseMemory returns memory from the given grant to the supply.
+func (cs *supply) ReleaseMemory(g Grant) {
+	cs.grantedMem -= g.MemLimit() // FIXME: allocate different memory types separately?
+	cs.node.DepthFirst(func(n Node) error {
+		n.FreeSupply().ReleaseExtraMemoryReservation(g)
+		return nil
+	})
 }
 
 func (cs *supply) ExtraMemoryReservation(memType memoryType) uint64 {
@@ -579,7 +589,7 @@ func (score *score) String() string {
 }
 
 // newGrant creates a CPU grant from the given node for the container.
-func newGrant(r Request, n Node, c cache.Container, exclusive cpuset.CPUSet, portion int, mt memoryType, memoryLimit uint64) Grant {
+func newGrant(n Node, c cache.Container, exclusive cpuset.CPUSet, portion int, mt memoryType, memoryLimit uint64) Grant {
 	mems := n.GetMemset(mt)
 	if mems.Size() == 0 {
 		mems = n.GetMemset(memoryDRAM)
@@ -597,7 +607,6 @@ func newGrant(r Request, n Node, c cache.Container, exclusive cpuset.CPUSet, por
 		memType:    mt,
 		memset:     mems.Clone(),
 		memlimit:   memoryLimit,
-		request:    r,
 	}
 }
 
@@ -654,11 +663,6 @@ func (cg *grant) Memset() system.IDSet {
 // MemLimit returns the granted memory.
 func (cg *grant) MemLimit() uint64 {
 	return cg.memlimit
-}
-
-// Request returns the granted request.
-func (cg *grant) Request() Request {
-	return cg.request
 }
 
 // String returns a printable representation of the CPU grant.

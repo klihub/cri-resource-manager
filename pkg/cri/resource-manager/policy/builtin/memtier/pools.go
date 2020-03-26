@@ -393,11 +393,11 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 
 	pool := grant.GetCPUNode()
 	supply := pool.FreeSupply()
-	supply.Release(grant)
+	supply.ReleaseCPU(grant)
 
 	pool = grant.GetMemoryNode()
 	supply = pool.FreeSupply()
-	supply.Release(grant)
+	supply.ReleaseMemory(grant)
 
 	delete(p.allocations.grants, container.GetCacheID())
 	p.saveAllocations()
@@ -520,7 +520,7 @@ func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo
 		}
 		// TODO: Need to filter based on the memory demotion scheme here. For example, if the request is
 		// of memory type memoryAll, the memory used might be PMEM until it's full and after that DRAM. If
-		// it's DRAM, amount of PMEM shoudl not be considered and so on.
+		// it's DRAM, amount of PMEM should not be considered and so on.
 		// memType := req.MemoryType()
 		if supply.GrantedMemory(memoryAll)+supply.ExtraMemoryReservation(memoryAll)+req.MemLimit() <= nodeTotalMemory {
 			filtered = append(filtered, node)

@@ -187,7 +187,7 @@ func (w *watcher) watch() error {
 			}
 		}
 
-		// shouln't be necessary, but just in case avoid spinning on a closed channel
+		// shouldn't be necessary, but just in case avoid spinning on a closed channel
 		time.Sleep(1 * time.Second)
 	}
 }

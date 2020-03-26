@@ -90,7 +90,6 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 	}
 
 	g := newGrant(
-		nil, // FIXME: where to get the request corresponding to this grant?
 		node,
 		container,
 		cpuset.MustParse(ccg.Exclusive),
