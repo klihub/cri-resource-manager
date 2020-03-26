@@ -688,28 +688,24 @@ func TestContainerMove(t *testing.T) {
 				panic(err)
 			}
 
-			newGrant1 := policy.allocations.grants[tc.container1.GetCacheID()]
-			newGrant2 := policy.allocations.grants[tc.container2.GetCacheID()]
-			newGrant3 := policy.allocations.grants[tc.container3.GetCacheID()]
-
-			if (grant1 == newGrant1) && tc.expectedChangeForContainer1 {
-				t.Errorf("Workload 1 should have been relocated: %t, node: %s", tc.expectedChangeForContainer1, newGrant1.GetNode().Name())
+			if (grant1.GetCPUNode().IsSameNode(grant1.GetMemoryNode())) && tc.expectedChangeForContainer1 {
+				t.Errorf("Workload 1 should have been relocated: %t, node: %s", tc.expectedChangeForContainer1, grant1.GetMemoryNode().Name())
 			}
-			if (grant2 == newGrant2) && tc.expectedChangeForContainer2 {
-				t.Errorf("Workload 2 should have been relocated: %t, node: %s", tc.expectedChangeForContainer2, newGrant2.GetNode().Name())
+			if (grant2.GetCPUNode().IsSameNode(grant2.GetMemoryNode())) && tc.expectedChangeForContainer2 {
+				t.Errorf("Workload 2 should have been relocated: %t, node: %s", tc.expectedChangeForContainer2, grant2.GetMemoryNode().Name())
 			}
-			if (grant3 == newGrant3) && tc.expectedChangeForContainer3 {
-				t.Errorf("Workload 3 should have been relocated: %t, node: %s", tc.expectedChangeForContainer3, newGrant3.GetNode().Name())
+			if (grant3.GetCPUNode().IsSameNode(grant3.GetMemoryNode())) && tc.expectedChangeForContainer3 {
+				t.Errorf("Workload 3 should have been relocated: %t, node: %s", tc.expectedChangeForContainer3, grant3.GetMemoryNode().Name())
 			}
 
-			if newGrant1.GetNode().IsLeafNode() != tc.expectedLeafNodeForContainer1 {
-				t.Errorf("Workload 1 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer1, newGrant1.GetNode().Name())
+			if grant1.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer1 {
+				t.Errorf("Workload 1 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer1, grant1.GetMemoryNode().Name())
 			}
-			if newGrant2.GetNode().IsLeafNode() != tc.expectedLeafNodeForContainer2 {
-				t.Errorf("Workload 2 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer2, newGrant2.GetNode().Name())
+			if grant2.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer2 {
+				t.Errorf("Workload 2 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer2, grant2.GetMemoryNode().Name())
 			}
-			if newGrant3.GetNode().IsLeafNode() != tc.expectedLeafNodeForContainer3 {
-				t.Errorf("Workload 3 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer3, newGrant3.GetNode().Name())
+			if grant3.GetMemoryNode().IsLeafNode() != tc.expectedLeafNodeForContainer3 {
+				t.Errorf("Workload 3 should have been placed in a leaf node: %t, node: %s", tc.expectedLeafNodeForContainer3, grant3.GetMemoryNode().Name())
 			}
 		})
 	}

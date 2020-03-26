@@ -15,7 +15,6 @@
 package memtier
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
@@ -100,6 +99,10 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 
 	request := newRequest(container)
 
+	// Assumption: in the beginning the CPUs and memory will be allocated from
+	// the same pool. This assumption can be relaxed later, requires separate
+	// (but connected) scoring of memory and CPU.
+
 	if container.GetNamespace() == kubernetes.NamespaceSystem {
 		pool = p.root
 	} else {
@@ -124,7 +127,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 		return nil, policyError("failed to allocate %s from %s: %v", request, supply, err)
 	}
 
-	// In case the workload is assigned to a node with multiple
+	// In case the workload is assigned to a memory node with multiple
 	// child nodes, there is no guarantee that the workload will
 	// allocate memory "nicely". Instead we'll have to make the
 	// conservative assumption that the memory will all be allocated
@@ -144,11 +147,11 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//                    +----------------+
 	//                    |Total mem: 4G   |
 	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |             1 CPUs
-	//                    |  1.5G, 2 CPUs  |             1G mem
+	//                    |Reserved:       |
+	//                    |  1.5G          |             1G mem
 	//                    |                |
 	//                    |                |            Workload 2:
-	//                    |                |             1 CPUs
+	//                    |                |
 	//                    +----------------+             0.5G mem
 	//                       /          \
 	//                      /            \
@@ -162,7 +165,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//  |Total mem: 2G   |                  |Total mem: 2G   |
 	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
 	//  |Reserved:       |                  |Reserved:       |
-	//  |  1G, 1 CPU     |                  |  0.5G, 1 CPU   |
+	//  |  1G            |                  |  0.5G          |
 	//  |                |                  |                |
 	//  |                |                  |                |
 	//  |     * WL 1     |                  |     * WL 2     |
@@ -175,15 +178,15 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//                    +----------------+
 	//                    |Total mem: 4G   |
 	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |             1 CPUs
-	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |Reserved:       |
+	//                    |  3G            |             1G mem
 	//                    |                |
 	//                    |                |            Workload 2:
-	//                    |  * WL 3        |             1 CPUs
+	//                    |  * WL 3        |
 	//                    +----------------+             0.5G mem
 	//                       /          \
 	//                      /            \              Workload 3:
-	//                     /              \              1 CPUs
+	//                     /              \
 	//                    /                \             1.5G mem
 	//                   /                  \
 	//                  /                    \
@@ -193,7 +196,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//  |Total mem: 2G   |                  |Total mem: 2G   |
 	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
 	//  |Reserved:       |                  |Reserved:       |
-	//  |  2.5G, 1 CPU   |                  |  2G, 1 CPU     |
+	//  |  2.5G          |                  |  2G            |
 	//  |                |                  |                |
 	//  |                |                  |                |
 	//  |     * WL 1     |                  |     * WL 2     |
@@ -208,15 +211,15 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//                    +----------------+
 	//                    |Total mem: 4G   |
 	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |             1 CPUs
-	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |Reserved:       |
+	//                    |  3G            |             1G mem
 	//                    |                |
 	//                    |  * WL 1        |            Workload 2:
-	//                    |  * WL 3        |             1 CPUs
+	//                    |  * WL 3        |
 	//                    +----------------+             0.5G mem
 	//                       /          \
 	//                      /            \              Workload 3:
-	//                     /              \              1 CPUs
+	//                     /              \
 	//                    /                \             1.5G mem
 	//                   /                  \
 	//                  /                    \
@@ -226,7 +229,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//  |Total mem: 2G   |                  |Total mem: 2G   |
 	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
 	//  |Reserved:       |                  |Reserved:       |
-	//  |  2.5G, 0 CPU   |                  |  3G, 1 CPU     |
+	//  |  2.5G          |                  |  3G            |
 	//  |                |                  |                |
 	//  |                |                  |                |
 	//  |                |                  |     * WL 2     |
@@ -239,15 +242,15 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//                    +----------------+
 	//                    |Total mem: 4G   |
 	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |             1 CPUs
-	//                    |  3G, 3 CPUs    |             1G mem
+	//                    |Reserved:       |
+	//                    |  3G            |             1G mem
 	//                    |  * WL 2        |
 	//                    |  * WL 1        |            Workload 2:
-	//                    |  * WL 3        |             1 CPUs
+	//                    |  * WL 3        |
 	//                    +----------------+             0.5G mem
 	//                       /          \
 	//                      /            \              Workload 3:
-	//                     /              \              1 CPUs
+	//                     /              \
 	//                    /                \             1.5G mem
 	//                   /                  \
 	//                  /                    \
@@ -257,46 +260,52 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	//  |Total mem: 2G   |                  |Total mem: 2G   |
 	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
 	//  |Reserved:       |                  |Reserved:       |
-	//  |  3G, 0 CPU     |                  |  3G, 0 CPU     |
+	//  |  3G            |                  |  3G            |
 	//  |                |                  |                |
 	//  |                |                  |                |
 	//  |                |                  |                |
 	//  +----------------+                  +----------------+
 	//
 
+	// We need to analyze all existing containers which are a subset of current grant.
+	memset := grant.GetMemoryNode().GetMemset(grant.MemoryType())
+
+	// Add an extra memory reservation to all subnodes.
+	// TODO: no need to do any of this is no memory request
+	pool.DepthFirst(func(n Node) error {
+		// No extra allocation should be done to the node itself.
+		if !n.IsSameNode(pool) {
+			supply := n.FreeSupply()
+			supply.SetExtraMemoryReservation(grant)
+		}
+		return nil
+	})
+
+	// See how much memory reservations the workloads on the
+	// nodes up from this one cause to the node. We only need to
+	// analyze the workloads up until this node, because it's
+	// guaranteed that the subtree can hold the workloads.
+
+	// If it turns out that the current workloads no longer fit
+	// to the node with the reservations from nodes from above
+	// in the tree, move all nodes upward. Note that this
+	// creates a reservation of the same size to the node, so in
+	// effect the node has to be empty of its "own" workloads.
+	// In this case move all the workloads one level up in the tree.
+
 	changed := true
 	for changed {
 		changed = false
-		pool.DepthFirst(func(n Node) error {
-			// See how much memory reservations the workloads on the
-			// nodes up from this one cause to the node.
-
-			// If it turns out that the current workloads no longer fit
-			// to the node with the reservations from nodes from above
-			// in the tree, move all nodes upward. Note that this
-			// creates a reservation of the same size to the node, so in
-			// effect the node has to be empty of its "own" workloads.
-			// In this case move all the workloads one level up in the tree.
-
-			// FIXME: It would be enough to calculate the extra memory
-			// reservation once for all nodes from the leaf to the pool
-			// node.
-
-			if !n.EnoughMemory() {
-				// If the workload doesn't fit, we'll have to move
-				// all the workloads up one level and try again.
-				// This causes also the other leaf nodes to have
-				// different allocations, so need to start over.
-				changed, err = n.MoveAllWorkloadsUp()
+		for _, oldGrant := range p.allocations.grants {
+			oldMemset := oldGrant.GetMemoryNode().GetMemset(grant.MemoryType())
+			if oldMemset.Size() < memset.Size() && memset.Has(oldMemset.Members()...) {
+				changed, err = p.expandMemset(oldGrant)
 				if err != nil {
-					return err
+					return nil, err
 				}
-				if changed {
-					return fmt.Errorf("fake error to terminate the loop") // FIXME
-				}
+				break
 			}
-			return nil
-		})
+		}
 	}
 
 	p.allocations.grants[container.GetCacheID()] = grant
@@ -329,7 +338,7 @@ func (p *policy) applyGrant(grant Grant) error {
 	}
 
 	mems := ""
-	node := grant.GetNode()
+	node := grant.GetMemoryNode()
 	if !node.IsRootNode() && opt.PinMemory {
 		mems = grant.Memset().String()
 	}
@@ -382,10 +391,14 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 
 	log.Debug("  => releasing grant %s...", grant)
 
-	pool := grant.GetNode()
+	pool := grant.GetCPUNode()
 	supply := pool.FreeSupply()
-
 	supply.Release(grant)
+
+	pool = grant.GetMemoryNode()
+	supply = pool.FreeSupply()
+	supply.Release(grant)
+
 	delete(p.allocations.grants, container.GetCacheID())
 	p.saveAllocations()
 
@@ -403,9 +416,9 @@ func (p *policy) updateSharedAllocations(grant Grant) error {
 		}
 
 		if opt.PinCPU {
-			shared := other.GetNode().FreeSupply().SharableCPUs().String()
+			shared := other.GetCPUNode().FreeSupply().SharableCPUs().String()
 			log.Debug("  => updating %s with shared CPUs of %s: %s...",
-				other, other.GetNode().Name(), shared)
+				other, other.GetCPUNode().Name(), shared)
 			other.GetContainer().SetCpusetCpus(shared)
 		}
 	}
@@ -443,8 +456,10 @@ func (p *policy) calculatePoolAffinities(container cache.Container) map[int]int3
 		if !ok {
 			continue
 		}
-		node := grant.GetNode()
+		node := grant.GetCPUNode()
 		result[node.NodeID()] += w
+
+		// TODO: calculate affinity for memory here too?
 	}
 
 	return result
@@ -497,12 +512,17 @@ func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo
 	filtered := make([]Node, 0)
 
 	for _, node := range originals {
+		// TODO: since we no longer use free memory, no need to fetch this every time
 		nodeTotalMemory, _, err := p.getNodeFreeMemory(node, infos)
 		supply := node.FreeSupply()
 		if err != nil {
 			continue
 		}
-		if supply.GrantedMemory()+supply.ExtraMemoryReservation()+req.MemLimit() <= nodeTotalMemory {
+		// TODO: Need to filter based on the memory demotion scheme here. For example, if the request is
+		// of memory type memoryAll, the memory used might be PMEM until it's full and after that DRAM. If
+		// it's DRAM, amount of PMEM shoudl not be considered and so on.
+		// memType := req.MemoryType()
+		if supply.GrantedMemory(memoryAll)+supply.ExtraMemoryReservation(memoryAll)+req.MemLimit() <= nodeTotalMemory {
 			filtered = append(filtered, node)
 		}
 	}

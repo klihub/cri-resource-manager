@@ -59,6 +59,7 @@ type cachedGrant struct {
 	Part        int
 	Container   string
 	Pool        string
+	MemoryPool  string
 	MemType     memoryType
 	Memset      system.IDSet
 	MemoryLimit uint64
@@ -69,7 +70,8 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.SharedPortion()
 	ccg.Container = cg.GetContainer().GetCacheID()
-	ccg.Pool = cg.GetNode().Name()
+	ccg.Pool = cg.GetCPUNode().Name()
+	ccg.MemoryPool = cg.GetMemoryNode().Name()
 	ccg.MemType = cg.MemoryType()
 	ccg.Memset = cg.Memset().Clone()
 	ccg.MemoryLimit = cg.MemLimit()

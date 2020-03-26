@@ -15,6 +15,8 @@
 package memtier
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -215,7 +217,7 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 
 	data := map[string]string{}
 	shared := grant.SharedCPUs().String()
-	isolated := grant.ExclusiveCPUs().Intersection(grant.GetNode().GetSupply().IsolatedCPUs())
+	isolated := grant.ExclusiveCPUs().Intersection(grant.GetCPUNode().GetSupply().IsolatedCPUs())
 	exclusive := grant.ExclusiveCPUs().Difference(isolated).String()
 
 	if shared != "" {
@@ -274,6 +276,47 @@ func (p *policy) configNotify(event config.Event, source config.Source) error {
 	p.saveConfig()
 
 	return nil
+}
+
+func (p *policy) expandMemset(g Grant) (bool, error) {
+
+	supply := g.GetMemoryNode().FreeSupply()
+	memType := g.MemoryType()
+
+	// 1. Figure out if there is enough memory now to have grant as-is.
+	extra := supply.ExtraMemoryReservation(memType)
+	granted := supply.GrantedMemory(memType)
+	limit := supply.MemoryLimit()
+	if extra+granted < limit {
+		log.Debug("%s: extra():%d + granted(): %d < limit: %d -> not moving", memType, extra, granted, limit)
+		return false, nil
+	}
+
+	// 2. If not, move the grant up in the memory tree.
+	node := g.GetMemoryNode()
+	parent := node.Parent()
+
+	if parent.IsNil() {
+		return false, fmt.Errorf("trying to move a grant up past the root of the tree")
+	}
+
+	g.SetMemoryNode(parent)
+
+	// 3. For every subnode, make sure that this grant is added to the extra memory allocation.
+	parent.DepthFirst(func(n Node) error {
+		// No extra allocation should be done to the node itself.
+		if !n.IsSameNode(parent) {
+			supply := n.FreeSupply()
+			supply.SetExtraMemoryReservation(g)
+		}
+		return nil
+	})
+
+	// 4. Make the container to use the new memory set.
+	// FIXME: this could be done in a second pass to avoid doing this many times
+	p.applyGrant(g)
+
+	return true, nil
 }
 
 // Check the constraints passed to us.

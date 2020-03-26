@@ -111,10 +111,6 @@ type Node interface {
 
 	GetScore(Request) Score
 	HintScore(topology.Hint) float64
-
-	ToRoot(func(Node) error) error
-	EnoughMemory() bool
-	MoveAllWorkloadsUp() (bool, error)
 }
 
 // node represents data common to all node types.
@@ -286,7 +282,7 @@ func (n *node) Dump(prefix string, level ...int) {
 	log.Debug("%s  - HBM memory: %v", idt, n.hbMem)
 	log.Debug("%s  - PMEM memory: %v", idt, n.pMem)
 	for _, grant := range n.policy.allocations.grants {
-		if grant.GetNode().NodeID() == n.id {
+		if grant.GetCPUNode().NodeID() == n.id {
 			log.Debug("%s    + %s", idt, grant)
 		}
 	}
@@ -405,83 +401,6 @@ func (n *node) GetMemoryType() memoryType {
 		memoryMask |= memoryHBMEM
 	}
 	return memoryMask
-}
-
-// MoveAllWorkloadsUp transferes all containers from this node to its
-// parent node.
-func (n *node) MoveAllWorkloadsUp() (bool, error) {
-
-	currentSupply := n.FreeSupply()
-	parentSupply := n.parent.FreeSupply()
-	changed := false
-	p := n.policy
-
-	// Do not change the map while iterating through it.
-	newAllocations := make(map[string]Grant)
-
-	for cid, grant := range p.allocations.grants {
-		if grant.GetNode().IsSameNode(n) {
-			log.Debug("Moving container %s up to node %s", cid, n.parent)
-			req := grant.Request()
-			currentSupply.Release(grant)
-			newGrant, err := parentSupply.Allocate(req)
-			if err != nil {
-				log.Error("Failed to allocate: %s", err)
-				return false, err
-			}
-			n.Policy().applyGrant(newGrant)
-			newAllocations[cid] = newGrant
-			changed = true
-		} else {
-			log.Debug("Not moving container %s up to node %s", cid, n.parent)
-		}
-	}
-	for cid, grant := range newAllocations {
-		p.allocations.grants[cid] = grant
-	}
-
-	// Return whether any workloads were changed.
-	return changed, nil
-}
-
-// EnoughMemory returns whether there is enough memory on the node to
-// satisfy the workload requirements and the memory reservations from
-// the nodes above in the tree.
-func (n *node) EnoughMemory() bool {
-	extraMemReservation := uint64(0)
-
-	if !n.parent.IsNil() {
-		n.parent.ToRoot(func(p Node) error {
-			parentSupply := p.FreeSupply()
-			// FIXME: If "GrantedMemory()" includes memory from
-			// sub-nodes, that needs to be removed from the total to
-			// prevent double counting. A better way to do this might
-			// be to count the memory limits of all containers
-			// allocated on this node.
-			extraMemReservation += parentSupply.GrantedMemory()
-			return nil
-		})
-	}
-
-	supply := n.FreeSupply()
-
-	if supply.GrantedMemory()+extraMemReservation <= supply.MemoryLimit() {
-		return true
-	}
-
-	log.Debug("Not enough memory for node %s: granted %d, extra %d, limit %d\n", n.name, supply.GrantedMemory(), supply.ExtraMemoryReservation(), supply.MemoryLimit())
-	return false
-}
-
-func (n *node) ToRoot(fn func(Node) error) error {
-	if n.IsRootNode() {
-		return fn(n)
-	}
-	p := n.parent
-	if err := p.ToRoot(fn); err != nil {
-		return err
-	}
-	return fn(n)
 }
 
 // NewNumaNode create a node for a CPU socket.
