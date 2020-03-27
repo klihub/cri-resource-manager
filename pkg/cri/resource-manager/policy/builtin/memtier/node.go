@@ -439,7 +439,18 @@ func (n *numanode) DiscoverSupply() Supply {
 	}
 	isolated := noderes.Intersection(n.policy.isolated)
 	sharable := noderes.Difference(isolated)
-	n.noderes = newSupply(n, isolated, sharable, 0, meminfo.MemTotal, 0)
+	var mem memoryMap
+	switch n.GetMemoryType() {
+	case memoryDRAM:
+		mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+	case memoryPMEM:
+		mem = createMemoryMap(0, meminfo.MemTotal, 0)
+	case memoryHBMEM:
+		mem = createMemoryMap(0, 0, meminfo.MemTotal)
+	case memoryUnspec:
+		mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+	}
+	n.noderes = newSupply(n, isolated, sharable, 0, mem, createMemoryMap(0, 0, 0))
 
 	n.freeres = n.noderes.Clone()
 	return n.noderes.Clone()
@@ -556,24 +567,33 @@ func (n *socketnode) GetPhysicalNodeIDs() []system.ID {
 // DiscoverSupply discovers the CPU supply available at this socket.
 func (n *socketnode) DiscoverSupply() Supply {
 	log.Debug("discovering CPU available at node %s...", n.Name())
+	mem := createMemoryMap(0, 0, 0)
 
 	if n.IsLeafNode() {
-		normMem := uint64(0)
 		nodeIDs := n.syspkg.NodeIDs()
 		if len(nodeIDs) == 1 {
 			node := n.System().Node(nodeIDs[0])
-			memInfo, err := node.MemoryInfo()
+			meminfo, err := node.MemoryInfo()
 			if err != nil {
 				log.Error("Couldn't get memory info for node %s...", n.Name())
 			}
-			normMem = memInfo.MemTotal
+			switch n.GetMemoryType() {
+			case memoryDRAM:
+				mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+			case memoryPMEM:
+				mem = createMemoryMap(0, meminfo.MemTotal, 0)
+			case memoryHBMEM:
+				mem = createMemoryMap(0, 0, meminfo.MemTotal)
+			case memoryUnspec:
+				mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+			}
 		}
 		sockcpus := n.syspkg.CPUSet()
 		isolated := sockcpus.Intersection(n.policy.isolated)
 		sharable := sockcpus.Difference(isolated)
-		n.noderes = newSupply(n, isolated, sharable, 0, normMem, 0)
+		n.noderes = newSupply(n, isolated, sharable, 0, mem, createMemoryMap(0, 0, 0))
 	} else {
-		n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0, 0)
+		n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, mem, createMemoryMap(0, 0, 0))
 		for _, c := range n.children {
 			n.noderes.Cumulate(c.DiscoverSupply())
 		}
@@ -651,7 +671,7 @@ func (n *virtualnode) GetSupply() Supply {
 func (n *virtualnode) DiscoverSupply() Supply {
 	log.Debug("discovering CPU available at node %s...", n.Name())
 
-	n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0, 0)
+	n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0))
 	for _, c := range n.children {
 		n.noderes.Cumulate(c.DiscoverSupply())
 	}

@@ -62,7 +62,7 @@ type cachedGrant struct {
 	MemoryPool  string
 	MemType     memoryType
 	Memset      system.IDSet
-	MemoryLimit uint64
+	MemoryLimit memoryMap
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -74,7 +74,11 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.MemoryPool = cg.GetMemoryNode().Name()
 	ccg.MemType = cg.MemoryType()
 	ccg.Memset = cg.Memset().Clone()
-	ccg.MemoryLimit = cg.MemLimit()
+
+	ccg.MemoryLimit = make(memoryMap)
+	for key, value := range cg.MemLimit() {
+		ccg.MemoryLimit[key] = value
+	}
 
 	return ccg
 }

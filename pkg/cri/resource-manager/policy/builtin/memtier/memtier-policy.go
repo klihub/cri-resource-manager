@@ -286,7 +286,9 @@ func (p *policy) expandMemset(g Grant) (bool, error) {
 	// 1. Figure out if there is enough memory now to have grant as-is.
 	extra := supply.ExtraMemoryReservation(memType)
 	granted := supply.GrantedMemory(memType)
-	limit := supply.MemoryLimit()
+	limit := supply.MemoryLimit()[memType]
+
+	// FIXME: it could be that the memory limit should be broken down to memory types in case it's memoryAll.
 	if extra+granted <= limit {
 		log.Debug("%s: extra():%d + granted(): %d <= limit: %d -> not moving", memType, extra, granted, limit)
 		return false, nil
