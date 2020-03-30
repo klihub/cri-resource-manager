@@ -449,6 +449,19 @@ func (n *numanode) DiscoverSupply() Supply {
 		mem = createMemoryMap(0, 0, meminfo.MemTotal)
 	case memoryUnspec:
 		mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+	case memoryDRAM | memoryPMEM:
+		// Get memory from PMEM nodes. TODO: do if pmem bit is set.
+		pmemTotal := uint64(0)
+		for _, id := range n.pMem.Members() {
+			pn := n.System().Node(id)
+			pmemInfo, err := pn.MemoryInfo()
+			if err != nil {
+				log.Error("Couldn't get memory info for node %d", pn.ID)
+			} else {
+				pmemTotal += pmemInfo.MemTotal
+			}
+		}
+		mem = createMemoryMap(meminfo.MemTotal, pmemTotal, 0)
 	}
 	n.noderes = newSupply(n, isolated, sharable, 0, mem, createMemoryMap(0, 0, 0))
 
@@ -586,6 +599,8 @@ func (n *socketnode) DiscoverSupply() Supply {
 				mem = createMemoryMap(0, 0, meminfo.MemTotal)
 			case memoryUnspec:
 				mem = createMemoryMap(meminfo.MemTotal, 0, 0)
+			default:
+				panic("FIXME Unknown memory type")
 			}
 		}
 		sockcpus := n.syspkg.CPUSet()

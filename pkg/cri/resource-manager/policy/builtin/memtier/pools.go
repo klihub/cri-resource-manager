@@ -15,6 +15,7 @@
 package memtier
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
@@ -126,6 +127,8 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	if err != nil {
 		return nil, policyError("failed to allocate %s from %s: %v", request, supply, err)
 	}
+
+	fmt.Printf("Allocated req '%s' to memory node '%s' (memset %s,%s)\n", container.GetCacheID(), grant.GetMemoryNode().Name(), grant.GetMemoryNode().GetMemset(memoryDRAM), grant.GetMemoryNode().GetMemset(memoryPMEM))
 
 	// In case the workload is assigned to a memory node with multiple
 	// child nodes, there is no guarantee that the workload will
@@ -271,7 +274,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	memset := grant.GetMemoryNode().GetMemset(grant.MemoryType())
 
 	// Add an extra memory reservation to all subnodes.
-	// TODO: no need to do any of this is no memory request
+	// TODO: no need to do any of this if no memory request
 	pool.DepthFirst(func(n Node) error {
 		// No extra allocation should be done to the node itself.
 		if !n.IsSameNode(pool) {
@@ -303,7 +306,10 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 				if err != nil {
 					return nil, err
 				}
-				break
+				if changed {
+					log.Debug("* moved container %s upward to node %s to guarantee memory", oldGrant.GetContainer().GetCacheID(), oldGrant.GetMemoryNode().Name())
+					break
+				}
 			}
 		}
 	}
@@ -478,6 +484,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 	return result
 }
 
+/*
 // Find the amount of free memory for this node and all its children. The lookups are cached in the "infos" map.
 func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInfo) (uint64, uint64, error) {
 	free := uint64(0)
@@ -502,23 +509,47 @@ func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInf
 
 	return total, free, nil
 }
+*/
 
 func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo, req Request, originals []Node) []Node {
 	filtered := make([]Node, 0)
 
 	for _, node := range originals {
-		// TODO: since we no longer use free memory, no need to fetch this every time
-		nodeTotalMemory, _, err := p.getNodeFreeMemory(node, infos)
-		supply := node.FreeSupply()
-		if err != nil {
-			continue
-		}
 		// TODO: Need to filter based on the memory demotion scheme here. For example, if the request is
 		// of memory type memoryAll, the memory used might be PMEM until it's full and after that DRAM. If
-		// it's DRAM, amount of PMEM should not be considered and so on.
-		// memType := req.MemoryType()
-		if supply.GrantedMemory(memoryAll)+supply.ExtraMemoryReservation(memoryAll)+req.MemLimit() <= nodeTotalMemory {
-			filtered = append(filtered, node)
+		// it's DRAM, amount of PMEM should not be considered and so on. How to find this out in a live
+		// system?
+
+		supply := node.FreeSupply()
+		memType := req.MemoryType()
+
+		if memType == memoryUnspec {
+			// The algorithm for handling unspecified memory allocations is the same as for handling a request
+			// with memory type all.
+			memType = memoryAll
+		}
+		bitsToFit := req.MemLimit()
+
+		if memType&memoryPMEM != 0 {
+			if supply.MemoryLimit()[memoryPMEM]-supply.ExtraMemoryReservation(memoryPMEM) >= bitsToFit {
+				filtered = append(filtered, node)
+				continue
+			} else {
+				bitsToFit -= supply.MemoryLimit()[memoryPMEM] - supply.ExtraMemoryReservation(memoryPMEM)
+			}
+		}
+		if memType&memoryDRAM != 0 {
+			if supply.MemoryLimit()[memoryDRAM]-supply.ExtraMemoryReservation(memoryDRAM) >= bitsToFit {
+				filtered = append(filtered, node)
+				continue
+			} else {
+				bitsToFit -= supply.MemoryLimit()[memoryDRAM] - supply.ExtraMemoryReservation(memoryDRAM)
+			}
+		}
+		if memType&memoryHBMEM != 0 {
+			if supply.MemoryLimit()[memoryHBMEM]-supply.ExtraMemoryReservation(memoryHBMEM) >= bitsToFit {
+				filtered = append(filtered, node)
+			}
 		}
 	}
 

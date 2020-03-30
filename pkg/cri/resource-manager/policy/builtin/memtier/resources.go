@@ -408,14 +408,18 @@ func (cs *supply) ReallocateMemory(g Grant) error {
 	// The grant has been previously allocated from another supply. Reallocate it here.
 	g.GetMemoryNode().FreeSupply().ReleaseMemory(g)
 
+	mem := uint64(0)
 	allocatedMemory := g.MemLimit()
 	for key, value := range allocatedMemory {
 		if cs.mem[key] < value {
-			return policyError("internal error: not enough memory for reallocation at %s", cs.GetNode)
+			return policyError("internal error: not enough memory for reallocation at %s (released from %s)", cs.GetNode().Name(), g.GetMemoryNode().Name())
 		}
 		cs.mem[key] -= value
 		cs.grantedMem[key] += value
+		mem += value
 	}
+	cs.grantedMem[memoryAll] += mem
+	cs.mem[memoryAll] -= mem
 	return nil
 }
 

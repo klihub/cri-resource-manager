@@ -110,8 +110,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
@@ -136,8 +136,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(9999, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(9999, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
@@ -162,8 +162,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 				},
 				&numanode{
@@ -171,8 +171,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      101,
 						name:    "testnode1",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(10001, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
@@ -197,8 +197,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      100,
 						name:    "testnode0",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(12000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(12000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 				},
 				&numanode{
@@ -206,8 +206,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      101,
 						name:    "testnode1",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 0, // system node id
 				},
@@ -216,8 +216,8 @@ func TestMemoryLimitFiltering(t *testing.T) {
 						id:      102,
 						name:    "testnode2",
 						kind:    UnknownNode,
-						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
-						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(0, 0, 0), createMemoryMap(0, 0, 0)),
+						noderes: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
+						freeres: newSupply(&node{}, cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, createMemoryMap(6000, 0, 0), createMemoryMap(0, 0, 0)),
 					},
 					id: 1, // system node id
 				},
@@ -326,6 +326,7 @@ func TestPoolCreation(t *testing.T) {
 		expectedFirstNodeMemory memoryType
 		expectedLeafNodeCPUs    int
 		expectedRootNodeCPUs    int
+		expectedRootNodeMemor   int
 	}{
 		{
 			path: path.Join(dir, "sysfs", "desktop", "sys"),
@@ -333,7 +334,7 @@ func TestPoolCreation(t *testing.T) {
 			req: &request{
 				memReq:    10000,
 				memLim:    10000,
-				memType:   memoryUnspec,
+				memType:   memoryAll,
 				container: &mockContainer{},
 			},
 			expectedRemainingNodes:  []int{0},
@@ -350,8 +351,7 @@ func TestPoolCreation(t *testing.T) {
 				memType:   memoryDRAM,
 				container: &mockContainer{},
 			},
-			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
-			// TODO: why not just memoryDRAM?
+			expectedRemainingNodes:  []int{0, 1, 2, 3, 4, 5, 6},
 			expectedFirstNodeMemory: memoryDRAM | memoryPMEM,
 			expectedLeafNodeCPUs:    28,
 			expectedRootNodeCPUs:    112,
@@ -424,7 +424,7 @@ func TestPoolCreation(t *testing.T) {
 				}
 			}
 
-			if filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
+			if len(filteredPools) > 0 && filteredPools[0].GetMemoryType() != tc.expectedFirstNodeMemory {
 				t.Errorf("Expected first node memory type %v, got %v", tc.expectedFirstNodeMemory, filteredPools[0].GetMemoryType())
 			}
 		})
@@ -493,14 +493,14 @@ func TestWorkloadPlacement(t *testing.T) {
 			path: path.Join(dir, "sysfs", "server", "sys"),
 			name: "workload placement on a server system root node: memory doesn't fit to leaf",
 			req: &request{
-				memReq:    50000000000,
-				memLim:    50000000000,
+				memReq:    190000000000,
+				memLim:    190000000000,
 				memType:   memoryUnspec,
 				isolate:   false,
 				full:      28,
 				container: &mockContainer{},
 			},
-			expectedRemainingNodes: []int{2, 5, 6},
+			expectedRemainingNodes: []int{2, 6},
 			expectedLeafNode:       false,
 		},
 	}
@@ -635,7 +635,7 @@ func TestContainerMove(t *testing.T) {
 				returnValueForGetResourceRequirements: v1.ResourceRequirements{
 					Limits: v1.ResourceList{
 						v1.ResourceCPU:    resapi.MustParse("2"),
-						v1.ResourceMemory: resapi.MustParse("50000000000"), // 500 GB
+						v1.ResourceMemory: resapi.MustParse("190000000000"), // 800 GB
 					},
 				},
 				returnValueForGetCacheID: "second",
@@ -644,14 +644,14 @@ func TestContainerMove(t *testing.T) {
 				returnValueForGetResourceRequirements: v1.ResourceRequirements{
 					Limits: v1.ResourceList{
 						v1.ResourceCPU:    resapi.MustParse("2"),
-						v1.ResourceMemory: resapi.MustParse("60000000000"), // 600 GB
+						v1.ResourceMemory: resapi.MustParse("140000000000"), // 900 GB
 					},
 				},
 				returnValueForGetCacheID: "third",
 			},
 			expectedLeafNodeForContainer1: false,
 			expectedLeafNodeForContainer2: false,
-			expectedLeafNodeForContainer3: false,
+			expectedLeafNodeForContainer3: true,
 			expectedChangeForContainer1:   true,
 		},
 	}
@@ -679,14 +679,19 @@ func TestContainerMove(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
+			fmt.Printf("grant 1 memsets: dram %s, pmem %s\n", grant1.GetMemoryNode().GetMemset(memoryDRAM), grant1.GetMemoryNode().GetMemset(memoryPMEM))
+
 			grant2, err := policy.allocatePool(tc.container2)
 			if err != nil {
 				panic(err)
 			}
+			fmt.Printf("grant 2 memsets: dram %s, pmem %s\n", grant2.GetMemoryNode().GetMemset(memoryDRAM), grant2.GetMemoryNode().GetMemset(memoryPMEM))
+
 			grant3, err := policy.allocatePool(tc.container3)
 			if err != nil {
 				panic(err)
 			}
+			fmt.Printf("grant 3 memsets: dram %s, pmem %s\n", grant3.GetMemoryNode().GetMemset(memoryDRAM), grant3.GetMemoryNode().GetMemset(memoryPMEM))
 
 			if (grant1.GetCPUNode().IsSameNode(grant1.GetMemoryNode())) && tc.expectedChangeForContainer1 {
 				t.Errorf("Workload 1 should have been relocated: %t, node: %s", tc.expectedChangeForContainer1, grant1.GetMemoryNode().Name())

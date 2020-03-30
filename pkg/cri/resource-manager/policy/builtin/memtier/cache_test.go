@@ -88,11 +88,11 @@ func TestAllocationMarshalling(t *testing.T) {
 	}{
 		{
 			name: "non-zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":0}}`),
+			data: []byte(`{"key1":{"Exclusive":"1","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":{"0":20}}}`),
 		},
 		{
 			name: "zero Exclusive",
-			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":0}}`),
+			data: []byte(`{"key1":{"Exclusive":"","Part":1,"Container":"1","Pool":"testnode","MemoryPool":"testnode","MemType":"DRAM,PMEM,HBMEM","Memset":"","MemoryLimit":{"0":20}}}`),
 		},
 	}
 	for _, tc := range tcases {
