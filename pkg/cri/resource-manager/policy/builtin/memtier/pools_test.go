@@ -272,8 +272,7 @@ func TestMemoryLimitFiltering(t *testing.T) {
 			}
 			policy.allocations.policy = policy
 
-			infos := make(map[system.ID]*system.MemInfo)
-			scores, filteredPools := policy.sortPoolsByScore(infos, tc.req, tc.affinities)
+			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
 			fmt.Printf("scores: %v, remaining pools: %v\n", scores, filteredPools)
 
 			if len(filteredPools) != len(tc.expectedRemainingNodes) {
@@ -403,8 +402,7 @@ func TestPoolCreation(t *testing.T) {
 				}
 			}
 
-			infos := make(map[system.ID]*system.MemInfo)
-			scores, filteredPools := policy.sortPoolsByScore(infos, tc.req, tc.affinities)
+			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
 			fmt.Printf("scores: %v, remaining pools: %v\n", scores, filteredPools)
 
 			if len(filteredPools) != len(tc.expectedRemainingNodes) {
@@ -521,8 +519,7 @@ func TestWorkloadPlacement(t *testing.T) {
 				panic(err)
 			}
 
-			infos := make(map[system.ID]*system.MemInfo)
-			scores, filteredPools := policy.sortPoolsByScore(infos, tc.req, tc.affinities)
+			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
 			fmt.Printf("scores: %v, remaining pools: %v\n", scores, filteredPools)
 
 			if len(filteredPools) != len(tc.expectedRemainingNodes) {

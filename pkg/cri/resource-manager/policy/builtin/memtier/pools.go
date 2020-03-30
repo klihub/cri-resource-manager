@@ -15,7 +15,6 @@
 package memtier
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
@@ -107,9 +106,8 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 	if container.GetNamespace() == kubernetes.NamespaceSystem {
 		pool = p.root
 	} else {
-		infos := make(map[system.ID]*system.MemInfo)
 		affinity := p.calculatePoolAffinities(request.GetContainer())
-		scores, pools := p.sortPoolsByScore(infos, request, affinity)
+		scores, pools := p.sortPoolsByScore(request, affinity)
 
 		if log.DebugEnabled() {
 			log.Debug("* node fitting for %s", request)
@@ -128,7 +126,7 @@ func (p *policy) allocatePool(container cache.Container) (Grant, error) {
 		return nil, policyError("failed to allocate %s from %s: %v", request, supply, err)
 	}
 
-	fmt.Printf("Allocated req '%s' to memory node '%s' (memset %s,%s)\n", container.GetCacheID(), grant.GetMemoryNode().Name(), grant.GetMemoryNode().GetMemset(memoryDRAM), grant.GetMemoryNode().GetMemset(memoryPMEM))
+	log.Debug("allocated req '%s' to memory node '%s' (memset %s,%s)", container.GetCacheID(), grant.GetMemoryNode().Name(), grant.GetMemoryNode().GetMemset(memoryDRAM), grant.GetMemoryNode().GetMemset(memoryPMEM))
 
 	// In case the workload is assigned to a memory node with multiple
 	// child nodes, there is no guarantee that the workload will
@@ -484,34 +482,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 	return result
 }
 
-/*
-// Find the amount of free memory for this node and all its children. The lookups are cached in the "infos" map.
-func (p *policy) getNodeFreeMemory(node Node, infos map[system.ID]*system.MemInfo) (uint64, uint64, error) {
-	free := uint64(0)
-	total := uint64(0)
-	ids := node.GetPhysicalNodeIDs()
-
-	for _, id := range ids {
-		if memInfo, found := infos[id]; found {
-			free += memInfo.MemFree
-			total += memInfo.MemTotal
-		} else {
-			numaNode := p.sys.Node(id)
-			memInfo, err := numaNode.MemoryInfo()
-			if err != nil {
-				return 0, 0, err
-			}
-			infos[id] = memInfo
-			free += memInfo.MemFree
-			total += memInfo.MemTotal
-		}
-	}
-
-	return total, free, nil
-}
-*/
-
-func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo, req Request, originals []Node) []Node {
+func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
 	filtered := make([]Node, 0)
 
 	for _, node := range originals {
@@ -557,7 +528,7 @@ func (p *policy) filterInsufficientResources(infos map[system.ID]*system.MemInfo
 }
 
 // Score pools against the request and sort them by score.
-func (p *policy) sortPoolsByScore(infos map[system.ID]*system.MemInfo, req Request, aff map[int]int32) (map[int]Score, []Node) {
+func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
 
 	p.root.DepthFirst(func(n Node) error {
@@ -567,7 +538,7 @@ func (p *policy) sortPoolsByScore(infos map[system.ID]*system.MemInfo, req Reque
 
 	// Filter out pools which don't have enough uncompressible resources
 	// (memory) to satisfy the request.
-	filteredPools := p.filterInsufficientResources(infos, req, p.pools)
+	filteredPools := p.filterInsufficientResources(req, p.pools)
 
 	sort.Slice(filteredPools, func(i, j int) bool {
 		return p.compareScores(req, scores, aff, i, j)

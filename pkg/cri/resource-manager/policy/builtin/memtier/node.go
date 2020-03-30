@@ -600,7 +600,7 @@ func (n *socketnode) DiscoverSupply() Supply {
 			case memoryUnspec:
 				mem = createMemoryMap(meminfo.MemTotal, 0, 0)
 			default:
-				panic("FIXME Unknown memory type")
+				log.Error("node has an unknown memory type/combination")
 			}
 		}
 		sockcpus := n.syspkg.CPUSet()
