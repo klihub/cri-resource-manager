@@ -506,6 +506,7 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 				filtered = append(filtered, node)
 				continue
 			} else {
+				// Can't go negative
 				bitsToFit -= supply.MemoryLimit()[memoryPMEM] - supply.ExtraMemoryReservation(memoryPMEM)
 			}
 		}

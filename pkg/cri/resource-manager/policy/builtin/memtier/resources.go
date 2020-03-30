@@ -308,45 +308,66 @@ func (cs *supply) AccountRelease(g Grant) {
 func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	memType := cr.MemoryType()
 	allocatedMem := createMemoryMap(0, 0, 0)
-	if memType == memoryAll || memType == memoryUnspec {
-		// We can allocate from any memory type. This means that we first remove memory from
-		// PMEM, then DRAM, and then HBMEM.
-		if cr.memLim > cs.mem[memoryAll]-cs.grantedMem[memoryAll] {
-			return nil, policyError("internal error: not enough memory at %s", cs.node.Name())
-		}
-		remaining := cr.memLim
+
+	if memType == memoryUnspec {
+		memType = memoryAll
+	}
+
+	remaining := cr.memLim
+
+	// First allocate from PMEM, then DRAM, finally HBMEM. No need to care about
+	// extra memory reservations since the nodes into which the request won't
+	// fit have already been filtered out.
+
+	if remaining > 0 && memType&memoryPMEM != 0 {
 		available := cs.mem[memoryPMEM] - cs.grantedMem[memoryPMEM]
 		if remaining < available {
 			cs.grantedMem[memoryPMEM] += remaining
 			cs.mem[memoryPMEM] -= remaining
 			allocatedMem[memoryPMEM] = remaining
+			remaining = 0
 		} else {
 			cs.grantedMem[memoryPMEM] += available
-			cs.mem[memoryPMEM] -= available
+			cs.mem[memoryPMEM] = 0
 			allocatedMem[memoryPMEM] = available
 			remaining -= available
-			available = cs.mem[memoryDRAM] - cs.grantedMem[memoryDRAM]
-			if remaining < available {
-				cs.grantedMem[memoryDRAM] += remaining
-				cs.mem[memoryDRAM] -= remaining
-				allocatedMem[memoryDRAM] = remaining
-			} else {
-				cs.grantedMem[memoryDRAM] += available
-				cs.mem[memoryDRAM] -= available
-				allocatedMem[memoryDRAM] = available
-				remaining -= available
-				cs.grantedMem[memoryHBMEM] += remaining
-				cs.mem[memoryHBMEM] -= remaining
-				allocatedMem[memoryDRAM] = remaining
-			}
 		}
-	} else {
-		if cr.memLim > cs.mem[memType]-cs.grantedMem[memType] {
-			return nil, policyError("internal error: not enough memory at %s", cs.node.Name())
-		}
-		cs.grantedMem[memType] += cr.memLim
-		cs.mem[memType] -= cr.memLim
 	}
+
+	if remaining > 0 && memType&memoryDRAM != 0 {
+		available := cs.mem[memoryDRAM] - cs.grantedMem[memoryDRAM]
+		if remaining < available {
+			cs.grantedMem[memoryDRAM] += remaining
+			cs.mem[memoryDRAM] -= remaining
+			allocatedMem[memoryDRAM] = remaining
+			remaining = 0
+		} else {
+			cs.grantedMem[memoryDRAM] += available
+			cs.mem[memoryDRAM] = 0
+			allocatedMem[memoryDRAM] = available
+			remaining -= available
+		}
+	}
+
+	if remaining > 0 && memType&memoryHBMEM != 0 {
+		available := cs.mem[memoryHBMEM] - cs.grantedMem[memoryHBMEM]
+		if remaining < available {
+			cs.grantedMem[memoryHBMEM] += remaining
+			cs.mem[memoryHBMEM] -= remaining
+			allocatedMem[memoryHBMEM] = remaining
+			remaining = 0
+		} else {
+			cs.grantedMem[memoryHBMEM] += available
+			cs.mem[memoryHBMEM] = 0
+			allocatedMem[memoryHBMEM] = available
+			remaining -= available
+		}
+	}
+
+	if remaining > 0 {
+		return nil, policyError("internal error: not enough memory at %s", cs.node.Name())
+	}
+
 	cs.mem[memoryAll] -= cr.memLim
 	cs.grantedMem[memoryAll] += cr.memLim
 
