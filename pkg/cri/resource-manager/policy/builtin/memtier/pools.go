@@ -499,7 +499,7 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 			// with memory type all.
 			memType = memoryAll
 		}
-		bitsToFit := req.MemLimit()
+		bitsToFit := req.MemAmountToAllocate()
 
 		if memType&memoryPMEM != 0 {
 			if supply.MemoryLimit()[memoryPMEM]-supply.ExtraMemoryReservation(memoryPMEM) >= bitsToFit {

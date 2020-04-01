@@ -80,7 +80,7 @@ type Request interface {
 	// MemoryType returns the type(s) of requested memory.
 	MemoryType() memoryType
 
-	MemLimit() uint64
+	MemAmountToAllocate() uint64
 }
 
 // Grant represents CPU and memory capacity allocated to a container from a node.
@@ -314,28 +314,7 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 		memType = memoryAll
 	}
 
-	qos := cr.GetContainer().GetQOSClass()
-	var amount uint64
-
-	switch qos {
-	case v1.PodQOSBestEffort:
-		// No requests or limits.
-		return allocatedMem, nil
-	case v1.PodQOSBurstable:
-		// May be a request and/or limit. We focus on the limit because we
-		// need to prepare for the case when all containers are using all
-		// the memory they are allowed to. If limit is not set then we'll
-		// allocate the request (which the container will get).
-		if cr.memLim > 0 {
-			amount = cr.memLim
-		} else {
-			amount = cr.memReq
-		}
-	case v1.PodQOSGuaranteed:
-		// Limit and request are the same.
-		amount = cr.memLim
-	}
-
+	amount := cr.MemAmountToAllocate()
 	remaining := amount
 
 	// First allocate from PMEM, then DRAM, finally HBMEM. No need to care about
@@ -610,8 +589,28 @@ func (cr *request) Elevate() int {
 	return cr.elevate
 }
 
-func (cr *request) MemLimit() uint64 {
-	return cr.memLim
+// MemAmountToAllocate retuns how much memory we need to reserve for a request.
+func (cr *request) MemAmountToAllocate() uint64 {
+	var amount uint64 = 0
+	switch cr.GetContainer().GetQOSClass() {
+	case v1.PodQOSBurstable:
+		// May be a request and/or limit. We focus on the limit because we
+		// need to prepare for the case when all containers are using all
+		// the memory they are allowed to. If limit is not set then we'll
+		// allocate the request (which the container will get).
+		if cr.memLim > 0 {
+			amount = cr.memLim
+		} else {
+			amount = cr.memReq
+		}
+	case v1.PodQOSGuaranteed:
+		// Limit and request are the same.
+		amount = cr.memLim
+	case v1.PodQOSBestEffort:
+		// No requests or limits.
+		amount = 0
+	}
+	return amount
 }
 
 // MemoryType returns the requested type of memory for the grant.
