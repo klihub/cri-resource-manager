@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strconv"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/intel/cri-resource-manager/pkg/cpuallocator"
@@ -302,7 +303,7 @@ func (cs *supply) AccountRelease(g Grant) {
 	cs.isolated = cs.isolated.Union(isolated)
 	cs.sharable = cs.sharable.Union(sharable)
 
-	// TODO: same for memory
+	// For memory the extra allocations be released elsewhere.
 }
 
 func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
@@ -313,7 +314,29 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 		memType = memoryAll
 	}
 
-	remaining := cr.memLim
+	qos := cr.GetContainer().GetQOSClass()
+	var amount uint64
+
+	switch qos {
+	case v1.PodQOSBestEffort:
+		// No requests or limits.
+		return allocatedMem, nil
+	case v1.PodQOSBurstable:
+		// May be a request and/or limit. We focus on the limit because we
+		// need to prepare for the case when all containers are using all
+		// the memory they are allowed to. If limit is not set then we'll
+		// allocate the request (which the container will get).
+		if cr.memLim > 0 {
+			amount = cr.memLim
+		} else {
+			amount = cr.memReq
+		}
+	case v1.PodQOSGuaranteed:
+		// Limit and request are the same.
+		amount = cr.memLim
+	}
+
+	remaining := amount
 
 	// First allocate from PMEM, then DRAM, finally HBMEM. No need to care about
 	// extra memory reservations since the nodes into which the request won't
@@ -368,8 +391,9 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 		return nil, policyError("internal error: not enough memory at %s", cs.node.Name())
 	}
 
-	cs.mem[memoryAll] -= cr.memLim
-	cs.grantedMem[memoryAll] += cr.memLim
+	// TODO: do we need to track the overall memory use or would the individual types be enough?
+	cs.mem[memoryAll] -= amount
+	cs.grantedMem[memoryAll] += amount
 
 	return allocatedMem, nil
 }

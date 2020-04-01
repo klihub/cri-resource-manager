@@ -196,6 +196,7 @@ type mockContainer struct {
 	returnValueForGetCacheID              string
 	memoryLimit                           int64
 	cpuset                                cpuset.CPUSet
+	returnValueForQOSClass                v1.PodQOSClass
 }
 
 func (m *mockContainer) PrettyName() string {
@@ -230,7 +231,11 @@ func (m *mockContainer) GetState() cache.ContainerState {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetQOSClass() v1.PodQOSClass {
-	panic("unimplemented")
+	if len(m.returnValueForQOSClass) == 0 {
+		return v1.PodQOSGuaranteed
+	}
+
+	return m.returnValueForQOSClass
 }
 func (m *mockContainer) GetImage() string {
 	panic("unimplemented")
