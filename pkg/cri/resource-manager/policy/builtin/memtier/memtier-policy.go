@@ -58,7 +58,6 @@ type policy struct {
 	nodeCnt     int                      // number of pools
 	depth       int                      // tree depth
 	allocations allocations              // container pool assignments
-
 }
 
 // Make sure policy implements the policy.Backend interface.

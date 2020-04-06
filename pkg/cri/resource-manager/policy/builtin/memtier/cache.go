@@ -34,7 +34,25 @@ func (p *policy) saveAllocations() {
 }
 
 func (p *policy) restoreAllocations() bool {
-	return p.cache.GetPolicyEntry(keyAllocations, &p.allocations)
+	// Get the allocations map.
+	success := p.cache.GetPolicyEntry(keyAllocations, &p.allocations)
+	// Based on the allocations, set the extra memory allocations to the nodes
+	// below the grant in the tree. We assume (for now) that the allocations are
+	// correct and the workloads don't need moving.
+	if success {
+		for _, grant := range p.allocations.grants {
+			pool := grant.GetMemoryNode()
+			pool.DepthFirst(func(n Node) error {
+				if !n.IsSameNode(pool) {
+					supply := n.FreeSupply()
+					supply.SetExtraMemoryReservation(grant)
+				}
+				return nil
+			})
+			return success
+		}
+	}
+	return success
 }
 
 func (p *policy) saveConfig() error {

@@ -50,10 +50,11 @@ type Supply interface {
 	GetScore(Request) Score
 	// Allocate allocates CPU capacity from this supply and returns it as a grant.
 	Allocate(Request) (Grant, error)
-	// Release releases a previously allocated grant.
+	// ReleaseCPU releases a previously allocated CPU grant from this supply.
 	ReleaseCPU(Grant)
-	ReleaseMemory(g Grant)
-	ReallocateMemory(g Grant) error
+	// ReleaseMemory releases a previously allocated memory grant from this supply.
+	ReleaseMemory(Grant)
+	ReallocateMemory(Grant) error
 	ExtraMemoryReservation(memoryType) uint64
 	SetExtraMemoryReservation(Grant)
 	ReleaseExtraMemoryReservation(Grant)
@@ -111,6 +112,8 @@ type Grant interface {
 	MemLimit() memoryMap
 	// String returns a printable representation of this grant.
 	String() string
+	// Release releases the grant from all the Supplys it uses.
+	Release()
 }
 
 // Score represents how well a supply can satisfy a request.
@@ -134,13 +137,10 @@ type memoryMap map[memoryType]uint64
 
 // supply implements our Supply interface.
 type supply struct {
-	node     Node          // node supplying CPUs and memory
-	isolated cpuset.CPUSet // isolated CPUs at this node
-	sharable cpuset.CPUSet // sharable CPUs at this node
-	granted  int           // amount of shareable allocated
-	// normMem              uint64              // available normal memory at this node
-	// slowMem              uint64              // available slow memory at this node
-	// fastMem              uint64              // available fast memory at this node
+	node                 Node                // node supplying CPUs and memory
+	isolated             cpuset.CPUSet       // isolated CPUs at this node
+	sharable             cpuset.CPUSet       // sharable CPUs at this node
+	granted              int                 // amount of shareable allocated
 	mem                  memoryMap           // available memory for this node
 	grantedMem           memoryMap           // total memory granted
 	extraMemReservations map[Grant]memoryMap // how much memory each workload above has requested
@@ -197,10 +197,11 @@ var _ Score = &score{}
 // newSupply creates CPU supply for the given node, cpusets and existing grant.
 func newSupply(n Node, isolated, sharable cpuset.CPUSet, granted int, mem, grantedMem memoryMap) Supply {
 	return &supply{
-		node:                 n,
-		isolated:             isolated.Clone(),
-		sharable:             sharable.Clone(),
-		granted:              granted,
+		node:     n,
+		isolated: isolated.Clone(),
+		sharable: sharable.Clone(),
+		granted:  granted,
+		// TODO: why are the CPU amounts cloned? Should we do the same for memory to be predictable?
 		mem:                  mem,
 		grantedMem:           grantedMem,
 		extraMemReservations: make(map[Grant]memoryMap),
@@ -225,11 +226,11 @@ func (cs *supply) GetNode() Node {
 // Clone clones the given CPU supply.
 func (cs *supply) Clone() Supply {
 	// Copy the maps.
-	var mem memoryMap = make(memoryMap)
+	mem := make(memoryMap)
 	for key, value := range cs.mem {
 		mem[key] = value
 	}
-	var grantedMem memoryMap = make(memoryMap)
+	grantedMem := make(memoryMap)
 	for key, value := range cs.grantedMem {
 		grantedMem[key] = value
 	}
@@ -814,6 +815,11 @@ func (cg *grant) String() string {
 
 	return fmt.Sprintf("<CPU grant for %s from %s: %s%s%s, mem: %s>",
 		cg.container.PrettyName(), cg.node.Name(), isolated, exclusive, shared, mem)
+}
+
+func (cg *grant) Release() {
+	cg.GetCPUNode().FreeSupply().ReleaseCPU(cg)
+	cg.GetMemoryNode().FreeSupply().ReleaseMemory(cg)
 }
 
 // takeCPUs takes up to cnt CPUs from a given CPU set to another.

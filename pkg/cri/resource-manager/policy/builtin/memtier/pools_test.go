@@ -325,7 +325,7 @@ func TestPoolCreation(t *testing.T) {
 		expectedFirstNodeMemory memoryType
 		expectedLeafNodeCPUs    int
 		expectedRootNodeCPUs    int
-		expectedRootNodeMemor   int
+		// TODO: expectedRootNodeMemory   int
 	}{
 		{
 			path: path.Join(dir, "sysfs", "desktop", "sys"),

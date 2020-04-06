@@ -395,8 +395,8 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool, error) {
 
 	log.Debug("  => releasing grant %s...", grant)
 
-	grant.GetCPUNode().FreeSupply().ReleaseCPU(grant)
-	grant.GetMemoryNode().FreeSupply().ReleaseMemory(grant)
+	// Remove the grant from all supplys it uses.
+	grant.Release()
 
 	delete(p.allocations.grants, container.GetCacheID())
 	p.saveAllocations()
