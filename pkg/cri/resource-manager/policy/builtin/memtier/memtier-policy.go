@@ -22,7 +22,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/intel/cri-resource-manager/pkg/config"
+	"github.com/intel/cri-resource-manager/pkg/cpuallocator"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
+	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/introspect"
 
 	policyapi "github.com/intel/cri-resource-manager/pkg/cri/resource-manager/policy"
 	system "github.com/intel/cri-resource-manager/pkg/sysfs"
@@ -45,19 +47,20 @@ type allocations struct {
 
 // policy is our runtime state for the memtier policy.
 type policy struct {
-	options     policyapi.BackendOptions // options we were created or reconfigured with
-	cache       cache.Cache              // pod/container cache
-	sys         system.System            // system/HW topology info
-	allowed     cpuset.CPUSet            // bounding set of CPUs we're allowed to use
-	reserved    cpuset.CPUSet            // system-/kube-reserved CPUs
-	reserveCnt  int                      // number of CPUs to reserve if given as resource.Quantity
-	isolated    cpuset.CPUSet            // (our allowed set of) isolated CPUs
-	nodes       map[string]Node          // pool nodes by name
-	pools       []Node                   // pre-populated node slice for scoring, etc...
-	root        Node                     // root of our pool/partition tree
-	nodeCnt     int                      // number of pools
-	depth       int                      // tree depth
-	allocations allocations              // container pool assignments
+	options      policyapi.BackendOptions  // options we were created or reconfigured with
+	cache        cache.Cache               // pod/container cache
+	sys          system.System             // system/HW topology info
+	allowed      cpuset.CPUSet             // bounding set of CPUs we're allowed to use
+	reserved     cpuset.CPUSet             // system-/kube-reserved CPUs
+	reserveCnt   int                       // number of CPUs to reserve if given as resource.Quantity
+	isolated     cpuset.CPUSet             // (our allowed set of) isolated CPUs
+	nodes        map[string]Node           // pool nodes by name
+	pools        []Node                    // pre-populated node slice for scoring, etc...
+	root         Node                      // root of our pool/partition tree
+	nodeCnt      int                       // number of pools
+	depth        int                       // tree depth
+	allocations  allocations               // container pool assignments
+	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -66,9 +69,10 @@ var _ policyapi.Backend = &policy{}
 // CreateTopologyAwarePolicy creates a new policy instance.
 func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend {
 	p := &policy{
-		cache:   opts.Cache,
-		sys:     opts.System,
-		options: *opts,
+		cache:        opts.Cache,
+		sys:          opts.System,
+		options:      *opts,
+		cpuAllocator: cpuallocator.NewCPUAllocator(opts.System),
 	}
 
 	p.nodes = make(map[string]Node)
@@ -205,6 +209,45 @@ func (p *policy) Rebalance() (bool, error) {
 	}
 
 	return true, errors
+}
+
+// Introspect provides data for external introspection.
+func (p *policy) Introspect(state *introspect.State) {
+	pools := make(map[string]*introspect.Pool, len(p.pools))
+	for _, node := range p.nodes {
+		cpus := node.GetSupply()
+		pool := &introspect.Pool{
+			Name:   node.Name(),
+			CPUs:   cpus.SharableCPUs().Union(cpus.IsolatedCPUs()).String(),
+			Memory: node.GetMemset(memoryAll).String(),
+		}
+		if parent := node.Parent(); !parent.IsNil() {
+			pool.Parent = parent.Name()
+		}
+		if children := node.Children(); len(children) > 0 {
+			pool.Children = make([]string, 0, len(children))
+			for _, c := range children {
+				pool.Children = append(pool.Children, c.Name())
+			}
+		}
+		pools[pool.Name] = pool
+	}
+	state.Pools = pools
+
+	assignments := make(map[string]*introspect.Assignment, len(p.allocations.grants))
+	for _, g := range p.allocations.grants {
+		a := &introspect.Assignment{
+			ContainerID:   g.GetContainer().GetID(),
+			CPUShare:      g.SharedPortion(),
+			ExclusiveCPUs: g.ExclusiveCPUs().Union(g.IsolatedCPUs()).String(),
+			Pool:          g.GetCPUNode().Name(),
+		}
+		if g.SharedPortion() > 0 || a.ExclusiveCPUs == "" {
+			a.SharedCPUs = g.SharedCPUs().String()
+		}
+		assignments[a.ContainerID] = a
+	}
+	state.Assignments = assignments
 }
 
 // ExportResourceData provides resource data to export for the container.

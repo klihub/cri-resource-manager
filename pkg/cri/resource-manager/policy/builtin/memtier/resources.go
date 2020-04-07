@@ -21,7 +21,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/cri-resource-manager/pkg/cpuallocator"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
 	system "github.com/intel/cri-resource-manager/pkg/sysfs"
 )
@@ -56,6 +55,7 @@ type Supply interface {
 	ReleaseMemory(Grant)
 	// ReallocateMemory updates the Grant to allocate memory from this supply.
 	ReallocateMemory(Grant) error
+	// ExtraMemoryReservation returns the m
 	ExtraMemoryReservation(memoryType) uint64
 	SetExtraMemoryReservation(Grant)
 	ReleaseExtraMemoryReservation(Grant)
@@ -389,7 +389,7 @@ func (cs *supply) Allocate(r Request) (Grant, error) {
 	// allocate isolated exclusive CPUs or slice them off the sharable set
 	switch {
 	case cr.full > 0 && cs.isolated.Size() >= cr.full:
-		exclusive, err = takeCPUs(&cs.isolated, nil, cr.full)
+		exclusive, err = cs.takeCPUs(&cs.isolated, nil, cr.full)
 		if err != nil {
 			return nil, policyError("internal error: "+
 				"can't allocate %d exclusive CPUs from %s of %s",
@@ -397,7 +397,7 @@ func (cs *supply) Allocate(r Request) (Grant, error) {
 		}
 
 	case cr.full > 0 && (1000*cs.sharable.Size()-cs.granted)/1000 > cr.full:
-		exclusive, err = takeCPUs(&cs.sharable, nil, cr.full)
+		exclusive, err = cs.takeCPUs(&cs.sharable, nil, cr.full)
 		if err != nil {
 			return nil, policyError("internal error: "+
 				"can't slice %d exclusive CPUs from %s(-%d) of %s",
@@ -500,6 +500,20 @@ func (cs *supply) SetExtraMemoryReservation(g Grant) {
 	}
 	res[memoryAll] = extraMemory
 	cs.extraMemReservations[g] = res
+}
+
+// takeCPUs takes up to cnt CPUs from a given CPU set to another.
+func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int) (cpuset.CPUSet, error) {
+	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, true)
+	if err != nil {
+		return cset, err
+	}
+
+	if to != nil {
+		*to = to.Union(cset)
+	}
+
+	return cset, err
 }
 
 // String returns the CPU and memory supply as a string.
@@ -820,18 +834,4 @@ func (cg *grant) String() string {
 func (cg *grant) Release() {
 	cg.GetCPUNode().FreeSupply().ReleaseCPU(cg)
 	cg.GetMemoryNode().FreeSupply().ReleaseMemory(cg)
-}
-
-// takeCPUs takes up to cnt CPUs from a given CPU set to another.
-func takeCPUs(from, to *cpuset.CPUSet, cnt int) (cpuset.CPUSet, error) {
-	cset, err := cpuallocator.AllocateCpus(from, cnt, false)
-	if err != nil {
-		return cset, err
-	}
-
-	if to != nil {
-		*to = to.Union(cset)
-	}
-
-	return cset, err
 }
