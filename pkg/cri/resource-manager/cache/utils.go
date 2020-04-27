@@ -64,11 +64,13 @@ func estimateComputeResources(lnx *cri.LinuxContainerResources) corev1.ResourceR
 		resources.Limits[corev1.ResourceCPU] = *qty
 	}
 
+/*
 	// calculate memory request
 	if value := OomScoreAdjToMemoryRequest(lnx.OomScoreAdj); value != 0 {
 		qty := resapi.NewQuantity(value, resapi.DecimalSI)
 		resources.Requests[corev1.ResourceMemory] = *qty
 	}
+	*/
 
 	// calculate memory limit
 	if value := lnx.MemoryLimitInBytes; value > 0 {
