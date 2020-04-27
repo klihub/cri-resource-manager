@@ -143,7 +143,7 @@ func (s *status) String() string {
 		"%s"+
 		"  equivalent topology placement:\n"+
 		"    - assigned CPU sockets: %s\n"+
-		"    - assigned NUMA nodes: %s\n",
+		"    - assigned NUMA nodes with CPUs: %s\n",
 		s.name, appID,
 		s.cpus, s.mems,
 		shared, exclusive, isolated,
