@@ -42,7 +42,9 @@ const (
 var memoryCapacity int64
 
 // estimateComputeResources calculates resource requests/limits from a CRI request.
-func estimateComputeResources(lnx *cri.LinuxContainerResources) corev1.ResourceRequirements {
+func estimateComputeResources(lnx *cri.LinuxContainerResources, cgroupParent string) corev1.ResourceRequirements {
+	var qos corev1.PodQOSClass
+
 	resources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{},
 		Limits:   corev1.ResourceList{},
@@ -52,30 +54,39 @@ func estimateComputeResources(lnx *cri.LinuxContainerResources) corev1.ResourceR
 		return resources
 	}
 
+	if cgroupParent != "" {
+		qos = cgroupParentToQOS(cgroupParent)
+	}
+
 	// calculate CPU request
 	if value := SharesToMilliCPU(lnx.CpuShares); value > 0 {
 		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
 		resources.Requests[corev1.ResourceCPU] = *qty
 	}
 
-	// calculate CPU limit
-	if value := QuotaToMilliCPU(lnx.CpuQuota, lnx.CpuPeriod); value > 0 {
-		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
-		resources.Limits[corev1.ResourceCPU] = *qty
-	}
-
-/*
-	// calculate memory request
-	if value := OomScoreAdjToMemoryRequest(lnx.OomScoreAdj); value != 0 {
-		qty := resapi.NewQuantity(value, resapi.DecimalSI)
-		resources.Requests[corev1.ResourceMemory] = *qty
-	}
-	*/
-
 	// calculate memory limit
 	if value := lnx.MemoryLimitInBytes; value > 0 {
 		qty := resapi.NewQuantity(value, resapi.DecimalSI)
 		resources.Limits[corev1.ResourceMemory] = *qty
+	}
+
+	// calculate CPU limit
+	if qos == corev1.PodQOSGuaranteed {
+		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
+		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
+	} else {
+		if value := QuotaToMilliCPU(lnx.CpuQuota, lnx.CpuPeriod); value > 0 {
+			qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
+			resources.Limits[corev1.ResourceCPU] = *qty
+		}
+
+		/*
+			// we can't estimate memory request with acceptable accuracy
+			if value := OomScoreAdjToMemoryRequest(lnx.OomScoreAdj); value != 0 {
+				qty := resapi.NewQuantity(value, resapi.DecimalSI)
+				resources.Requests[corev1.ResourceMemory] = *qty
+			}
+		*/
 	}
 
 	return resources
