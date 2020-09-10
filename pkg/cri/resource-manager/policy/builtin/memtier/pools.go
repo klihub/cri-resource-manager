@@ -19,6 +19,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"github.com/intel/cri-resource-manager/pkg/apis/resmgr"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/kubernetes"
 	system "github.com/intel/cri-resource-manager/pkg/sysfs"
@@ -524,6 +525,18 @@ func (p *policy) addImplicitAffinities() error {
 				return !ok
 			},
 			Affinity: cache.GlobalAntiAffinity("tags/"+cache.TagAVX512, 5),
+		},
+		PolicyName + ":intra-pod-pull": {
+			Eligible: func(c cache.Container) bool {
+				return true
+			},
+			Affinity: &cache.Affinity{
+				// scope is the implicit pod scope
+				Match: &resmgr.Expression{
+					Op: resmgr.AlwaysTrue,
+				},
+				Weight: 1,
+			},
 		},
 	})
 }
