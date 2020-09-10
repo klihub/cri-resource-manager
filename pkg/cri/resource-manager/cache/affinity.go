@@ -62,12 +62,18 @@ type ImplicitAffinity struct {
 
 // Validate checks the affinity for (obvious) invalidity.
 func (a *Affinity) Validate() error {
-	if err := a.Scope.Validate(); err != nil {
-		return cacheError("invalid affinity scope: %v", err)
+	if a.Scope == nil && a.Match == nil {
+		return cacheError("invalid affinity, neither scope nor match specified")
 	}
-
-	if err := a.Match.Validate(); err != nil {
-		return cacheError("invalid affinity match: %v", err)
+	if a.Scope != nil {
+		if err := a.Scope.Validate(); err != nil {
+			return cacheError("invalid affinity scope: %v", err)
+		}
+	}
+	if a.Match != nil {
+		if err := a.Match.Validate(); err != nil {
+			return cacheError("invalid affinity match: %v", err)
+		}
 	}
 
 	switch {
