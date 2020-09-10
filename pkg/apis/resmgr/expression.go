@@ -109,57 +109,61 @@ func (e *Expression) Validate() error {
 
 // Evaluate evaluates an expression against a container.
 func (e *Expression) Evaluate(subject Evaluable) bool {
-	log.Debug("evaluating %q @ %s...", *e, subject)
+	log.Debug("evaluating %q @ %s...", e.String(), subject)
 
-	value, ok := e.KeyValue(subject)
 	result := false
+	if e != nil {
+		value, ok := e.KeyValue(subject)
 
-	switch e.Op {
-	case Equals:
-		result = ok && (value == e.Values[0] || e.Values[0] == "*")
-	case NotEqual:
-		result = !ok || value != e.Values[0]
-	case Matches, MatchesNot:
-		match := false
-		if ok {
-			match, _ = filepath.Match(e.Values[0], value)
-		}
-		result = ok && match
-		if e.Op == MatchesNot {
-			result = !result
-		}
-	case In, NotIn:
-		if ok {
-			for _, v := range e.Values {
-				if value == v || v == "*" {
-					result = true
+		switch e.Op {
+		case Equals:
+			result = ok && (value == e.Values[0] || e.Values[0] == "*")
+		case NotEqual:
+			result = !ok || value != e.Values[0]
+		case Matches, MatchesNot:
+			match := false
+			if ok {
+				match, _ = filepath.Match(e.Values[0], value)
+			}
+			result = ok && match
+			if e.Op == MatchesNot {
+				result = !result
+			}
+		case In, NotIn:
+			if ok {
+				for _, v := range e.Values {
+					if value == v || v == "*" {
+						result = true
+					}
 				}
 			}
-		}
-		if e.Op == NotIn {
-			result = !result
-		}
-	case MatchesAny, MatchesNone:
-		if ok {
-			for _, pattern := range e.Values {
-				if match, _ := filepath.Match(pattern, value); match {
-					result = true
-					break
+			if e.Op == NotIn {
+				result = !result
+			}
+		case MatchesAny, MatchesNone:
+			if ok {
+				for _, pattern := range e.Values {
+					if match, _ := filepath.Match(pattern, value); match {
+						result = true
+						break
+					}
 				}
 			}
+			if e.Op == MatchesNone {
+				result = !result
+			}
+		case Exists:
+			result = ok
+		case NotExist:
+			result = !ok
+		case AlwaysTrue:
+			result = true
 		}
-		if e.Op == MatchesNone {
-			result = !result
-		}
-	case Exists:
-		result = ok
-	case NotExist:
-		result = !ok
-	case AlwaysTrue:
+	} else {
 		result = true
 	}
 
-	log.Debug("%q @ %s => %v", *e, subject, result)
+	log.Debug("%q @ %s => %v", e.String(), subject, result)
 
 	return result
 }
@@ -281,11 +285,18 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 
 // String returns the expression as a string.
 func (e *Expression) String() string {
-	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
+	if e != nil {
+		return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
+	} else {
+		return fmt.Sprintf("<nil:implicit AlwaysTrue>")
+	}
 }
 
 // DeepCopy creates a deep copy of the expression.
 func (e *Expression) DeepCopy() *Expression {
+	if e == nil {
+		return nil
+	}
 	out := &Expression{}
 	e.DeepCopyInto(out)
 	return out
@@ -293,6 +304,9 @@ func (e *Expression) DeepCopy() *Expression {
 
 // DeepCopyInto copies the expression into another one.
 func (e *Expression) DeepCopyInto(out *Expression) {
+	if e == nil {
+		out.Op = AlwaysTrue
+	}
 	out.Key = e.Key
 	out.Op = e.Op
 	out.Values = make([]string, len(e.Values))
