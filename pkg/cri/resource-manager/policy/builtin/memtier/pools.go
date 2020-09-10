@@ -555,7 +555,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 
 	result := make(map[string]int32)
 	for _, a := range ca {
-		for id, w := range p.cache.EvaluateAffinity(a) {
+		for id, w := range p.cache.EvaluateAffinity(container, a) {
 			result[id] += w
 		}
 	}

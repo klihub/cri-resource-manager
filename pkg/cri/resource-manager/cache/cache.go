@@ -496,7 +496,7 @@ type Cache interface {
 	// FilterScope returns the containers selected by the scope expression.
 	FilterScope(*resmgr.Expression) []Container
 	// EvaluateAffinity evaluates the given affinity against all known in-scope containers
-	EvaluateAffinity(*Affinity) map[string]int32
+	EvaluateAffinity(Container, *Affinity) map[string]int32
 	// AddImplicitAffinities adds a set of implicit affinities (added to all containers).
 	AddImplicitAffinities(map[string]*ImplicitAffinity) error
 

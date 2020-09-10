@@ -81,9 +81,17 @@ func (a *Affinity) Validate() error {
 }
 
 // EvaluateAffinity evaluates the given affinity against all known in-scope containers.
-func (cch *cache) EvaluateAffinity(a *Affinity) map[string]int32 {
+func (cch *cache) EvaluateAffinity(container Container, a *Affinity) map[string]int32 {
+	scope := a.Scope
+	if scope == nil {
+		if pod, ok := container.GetPod(); !ok {
+			return nil
+		} else {
+			scope = pod.ScopeExpression()
+		}
+	}
 	results := make(map[string]int32)
-	for _, c := range cch.FilterScope(a.Scope) {
+	for _, c := range cch.FilterScope(scope) {
 		if a.Match.Evaluate(c) {
 			id := c.GetCacheID()
 			results[id] += a.Weight
@@ -113,8 +121,14 @@ func (a *Affinity) String() string {
 	if a.Weight < 0 {
 		kind = "anti-"
 	}
+	scope := ""
+	if a.Scope != nil {
+		scope = a.Scope.String()
+	} else {
+		scope = "<nil:implicit pod scope>"
+	}
 	return fmt.Sprintf("<%saffinity: scope %s %s => %d>",
-		kind, a.Scope.String(), a.Match.String(), a.Weight)
+		kind, scope, a.Match.String(), a.Weight)
 }
 
 // Try to parse affinities in simplified notation from the given annotation value.
@@ -189,7 +203,6 @@ func (pca *podContainerAffinity) parseFull(pod *pod, value string, weight int32)
 		return cacheError("failed to parse affinity annotation '%s': %v", value, err)
 	}
 
-	podScope := pod.ScopeExpression()
 	for name, pa := range parsed {
 		ca, ok := (*pca)[name]
 		if !ok {
@@ -197,9 +210,6 @@ func (pca *podContainerAffinity) parseFull(pod *pod, value string, weight int32)
 		}
 
 		for _, a := range pa {
-			if a.Scope == nil {
-				a.Scope = podScope
-			}
 			if a.Weight == 0 {
 				a.Weight = weight
 			} else {
