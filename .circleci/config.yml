@@ -15,6 +15,17 @@ jobs:
       - run: make
       - run: make golangci-lint
       - run: make GO_PARALLEL="-p 1" test
+      - run: |
+          echo "Considering release tests for branch $CIRCLE_BRANCH..."
+          case "$CIRCLE_BRANCH" in
+          refs/heads/release*|release*)
+              echo "Running release tests...."
+              make release-tests
+              ;;
+          *)
+              echo "Skipping release tests."
+              ;;
+          esac
       - run:
           name: Codecov report
           command: bash <(curl -s https://codecov.io/bash)
