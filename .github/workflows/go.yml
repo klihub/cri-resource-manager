@@ -42,5 +42,9 @@ jobs:
     - name: Test
       run: make test
 
+    - name: Release Tests
+      if: startsWith(github.base_ref, 'refs/heads/release-')
+      run: make release-tests
+
     - name: Codecov report
       run: bash <(curl -s https://codecov.io/bash)
