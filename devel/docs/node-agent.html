@@ -7,7 +7,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Node Agent &mdash; CRI Resource Manager 0.4.0-85-gf99b0e3 documentation</title>
+  <title>Node Agent &mdash; CRI Resource Manager 0.4.0-103-g8b42bde documentation</title>
   
 
   
@@ -170,8 +170,8 @@
 <h1>Node Agent<a class="headerlink" href="#node-agent" title="Permalink to this headline">¶</a></h1>
 <p>CRI Resource Manager can be configured dynamically using the CRI Resource
 Manager Node Agent and Kubernetes ConfigMaps. The agent can be build using
-the <a class="reference external" href="../cmd/cri-resmgr-agent/Dockerfile">provided Dockerfile</a>. It can be deployed
-as a <code class="docutils literal notranslate"><span class="pre">DaemonSet</span></code> in the cluster using the <a class="reference external" href="../cmd/cri-resmgr-agent/agent-deployment.yaml">provided deployment file</a>.</p>
+the <a class="reference external" href="https://github.com/klihub/cri-resource-manager/blob/8b42bde13972ecb85e22f0408b6be030eafefd86/cmd/cri-resmgr-agent/Dockerfile">provided Dockerfile</a>. It can be deployed
+as a <code class="docutils literal notranslate"><span class="pre">DaemonSet</span></code> in the cluster using the <a class="reference external" href="https://github.com/klihub/cri-resource-manager/blob/8b42bde13972ecb85e22f0408b6be030eafefd86/cmd/cri-resmgr-agent/agent-deployment.yaml">provided deployment file</a>.</p>
 <p>To run the agent manually or as a <code class="docutils literal notranslate"><span class="pre">systemd</span></code> service, set the environment variable
 <code class="docutils literal notranslate"><span class="pre">NODE_NAME</span></code> to the name of the cluster node the agent is running on. If necessary
 pass it the credentials for accessing the cluster using the the <code class="docutils literal notranslate"><span class="pre">-kubeconfig</span> <span class="pre">&lt;file&gt;</span></code>
@@ -190,7 +190,7 @@ the others.</p>
 <code class="docutils literal notranslate"><span class="pre">cri-resource-manager.intel.com/group</span></code> label on the node to the name of
 the configuration group. You can remove a node from its group by deleting the node
 group label.</p>
-<p>There is a <a class="reference external" href="../sample-configs/cri-resmgr-configmap.example.yaml">sample ConfigMap spec</a>
+<p>There is a <a class="reference external" href="https://github.com/klihub/cri-resource-manager/blob/8b42bde13972ecb85e22f0408b6be030eafefd86/sample-configs/cri-resmgr-configmap.example.yaml">sample ConfigMap spec</a>
 that contains anode-specific, a group-specific, and a default ConfigMap examples.
 See <a class="reference internal" href="policy/index.html">any available policy-specific documentation</a> for more information on the
 policy configurations.</p>
@@ -258,37 +258,29 @@ policy configurations.</p>
         <span class="fa fa-caret-down"></span>
       </span>
       <div class="rst-other-versions">
-        <dl>
+        <dl id="versions">
           <dt>Versions</dt>
-          
-          <dd><a href="/cri-resource-manager/_static">_static</a></dd>
-          
-          <dd><a href="/cri-resource-manager/cmd">cmd</a></dd>
-          
-          <dd><a href="/cri-resource-manager/demo">demo</a></dd>
-          
-          <dd><a href="/cri-resource-manager/devel">devel</a></dd>
-          
-          <dd><a href="/cri-resource-manager/dockerfiles">dockerfiles</a></dd>
-          
-          <dd><a href="/cri-resource-manager/docs">docs</a></dd>
-          
-          <dd><a href="/cri-resource-manager/elf">elf</a></dd>
-          
-          <dd><a href="/cri-resource-manager/packaging">packaging</a></dd>
-          
-          <dd><a href="/cri-resource-manager/pkg">pkg</a></dd>
-          
-          <dd><a href="/cri-resource-manager/sample-configs">sample-configs</a></dd>
-          
-          <dd><a href="/cri-resource-manager/scripts">scripts</a></dd>
-          
-          <dd><a href="/cri-resource-manager/test">test</a></dd>
-          
+          <dt>
+        </dl>
+        <dl>
+          <a href="/cri-resource-manager/releases">all releases</a>
+          </dt>
         </dl>
       </div>
     </div>
   
+  <script src="../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
 
 
 </body>

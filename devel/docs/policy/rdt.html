@@ -7,7 +7,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>RDT (Intel® Resource Director Technology) &mdash; CRI Resource Manager 0.4.0-85-gf99b0e3 documentation</title>
+  <title>RDT (Intel® Resource Director Technology) &mdash; CRI Resource Manager 0.4.0-103-g8b42bde documentation</title>
   
 
   
@@ -295,7 +295,7 @@ data paths.</p>
 configure allocations exactly as required. The bits in this case are
 corresponding to those in /sys/fs/resctrl/ bitmasks. You can also mix relative
 (percentage) and absolute (bitmask) allocations.</p>
-<p>See <code class="docutils literal notranslate"><span class="pre">rdt</span></code> in the <a class="reference external" href="../../sample-configs/cri-resmgr-configmap.example.yaml">example ConfigMap spec</a>
+<p>See <code class="docutils literal notranslate"><span class="pre">rdt</span></code> in the <a class="reference external" href="https://github.com/klihub/cri-resource-manager/blob/8b42bde13972ecb85e22f0408b6be030eafefd86/sample-configs/cri-resmgr-configmap.example.yaml">example ConfigMap spec</a>
 for a more complete example configuration.</p>
 </div>
 <div class="section" id="dynamic-configuration">
@@ -371,37 +371,29 @@ class that a running container has been assigned to.</p>
         <span class="fa fa-caret-down"></span>
       </span>
       <div class="rst-other-versions">
-        <dl>
+        <dl id="versions">
           <dt>Versions</dt>
-          
-          <dd><a href="/cri-resource-manager/_static">_static</a></dd>
-          
-          <dd><a href="/cri-resource-manager/cmd">cmd</a></dd>
-          
-          <dd><a href="/cri-resource-manager/demo">demo</a></dd>
-          
-          <dd><a href="/cri-resource-manager/devel">devel</a></dd>
-          
-          <dd><a href="/cri-resource-manager/dockerfiles">dockerfiles</a></dd>
-          
-          <dd><a href="/cri-resource-manager/docs">docs</a></dd>
-          
-          <dd><a href="/cri-resource-manager/elf">elf</a></dd>
-          
-          <dd><a href="/cri-resource-manager/packaging">packaging</a></dd>
-          
-          <dd><a href="/cri-resource-manager/pkg">pkg</a></dd>
-          
-          <dd><a href="/cri-resource-manager/sample-configs">sample-configs</a></dd>
-          
-          <dd><a href="/cri-resource-manager/scripts">scripts</a></dd>
-          
-          <dd><a href="/cri-resource-manager/test">test</a></dd>
-          
+          <dt>
+        </dl>
+        <dl>
+          <a href="/cri-resource-manager/releases">all releases</a>
+          </dt>
         </dl>
       </div>
     </div>
   
+  <script src="../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
 
 
 </body>
