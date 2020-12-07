@@ -7,7 +7,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Container Affinity and Anti-Affinity &mdash; CRI Resource Manager 0.4.0-261-g6a2c41e documentation</title>
+  <title>Container Affinity and Anti-Affinity &mdash; CRI Resource Manager 0.4.0-277-ge5c5ed0 documentation</title>
   
 
   
@@ -356,14 +356,14 @@ matching operators. The joint key syntax allows joining the value of several key
 with a separator into a single value. A joint key can be specified in a simple or
 full format:</p>
 <ul class="simple">
-<li><p>simple: “:<colon-separated-subkeys>”, this is equivalent to “:::<colon-separated-subkeys>”</p></li>
-<li><p>full:   “:<ksep><vsep><ksep-separated-keylist>”</p></li>
+<li><p>simple: “:&amp;ltcolon-separated-subkeys&amp;gt”, this is equivalent to “:::&amp;ltcolon-separated-subkeys&amp;gt”</p></li>
+<li><p>full:   “:&amp;ltksep&amp;gt&amp;ltvsep&amp;gt&amp;ltksep-separated-keylist&amp;gt”</p></li>
 </ul>
-<p>A joint key evaluates to the values of all subkeys joined by the <vsep>. A non-existent
+<p>A joint key evaluates to the values of all subkeys joined by the &amp;ltvsep&amp;gt. A non-existent
 subkey evaluates to the empty string. For instance the joint key</p>
 <p>:pod/qosclass:pod/name:name</p>
 <p>evaluates to</p>
-<p>“<qosclass>:<pod name>:<container name>”</p>
+<p>“&amp;ltqosclass&amp;gt:&amp;ltpod name&amp;gt:&amp;ltcontainer name&amp;gt”</p>
 <p>For existence operators, a joint key is considered to exist if any of its subkeys exists.</p>
 </div>
 <div class="section" id="examples">
@@ -505,15 +505,15 @@ one needs to give just the names of the containers, like in the example below.</
     <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
       <span class="rst-current-version" data-toggle="rst-current-version">
         <span class="fa fa-book"> GitHub Pages</span>
-        v: devel
+        devel
         <span class="fa fa-caret-down"></span>
       </span>
       <div class="rst-other-versions">
         <dl id="versions">
           <dt>Versions</dt>
-          <dt>
         </dl>
         <dl>
+          <dt>
           <a href="/cri-resource-manager/releases">all releases</a>
           </dt>
         </dl>
