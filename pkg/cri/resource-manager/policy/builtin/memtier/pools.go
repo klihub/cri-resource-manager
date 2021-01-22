@@ -675,6 +675,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) map[strin
 func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
 	filtered := make([]Node, 0)
 
+filterNodes:
 	for _, node := range originals {
 		// TODO:
 		//   Need to filter based on the memory demotion scheme here. For example,
@@ -704,44 +705,22 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 		log.Debug("%s: checking amount of %s memory (need %d)",
 			node.Name(), memType.String(), bitsToFit)
 
-		if memType&memoryPMEM != 0 {
-			usable := memLimit[memoryPMEM] - supply.ExtraMemoryReservation(memoryPMEM)
-			if usable >= bitsToFit {
-				filtered = append(filtered, node)
-				continue
+		for _, t := range []memoryType{memoryPMEM, memoryDRAM, memoryHBM} {
+			if memType&t != 0 {
+				usable := memLimit[t] - supply.ExtraMemoryReservation(t)
+				if usable >= bitsToFit {
+					filtered = append(filtered, node)
+					continue filterNodes
+				}
+
+				log.Debug("%s: insufficient %s (%d < %d)", node.Name(),
+					t.String(), memLimit[t], bitsToFit)
+
+				bitsToFit -= usable // Note: guaranteed to be positive
 			}
-
-			log.Debug("%s: insufficient PMEM (%d < %d)", node.Name(),
-				memLimit[memoryPMEM], bitsToFit)
-
-			bitsToFit -= usable // Note: guaranteed to be positive
 		}
 
-		if memType&memoryDRAM != 0 {
-			usable := memLimit[memoryDRAM] - supply.ExtraMemoryReservation(memoryDRAM)
-			if usable >= bitsToFit {
-				filtered = append(filtered, node)
-				continue
-			}
-
-			log.Debug("%s: insufficient DRAM (%d < %d)", node.Name(),
-				memLimit[memoryDRAM], bitsToFit)
-
-			bitsToFit -= usable // Note: guaranteed to be positive
-		}
-
-		if memType&memoryHBM != 0 {
-			usable := supply.MemoryLimit()[memoryHBM] - supply.ExtraMemoryReservation(memoryHBM)
-			if usable >= bitsToFit {
-				filtered = append(filtered, node)
-				continue
-			}
-
-			log.Debug("%s insufficient HBM (%d < %d)", node.Name(),
-				memLimit[memoryHBM], bitsToFit)
-
-			log.Debug("%s: => insufficient total memory, filtered out", node.Name())
-		}
+		log.Debug("%s: => insufficient total memory, filtered out", node.Name())
 	}
 
 	return filtered
