@@ -676,46 +676,71 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 	filtered := make([]Node, 0)
 
 	for _, node := range originals {
-		// TODO: Need to filter based on the memory demotion scheme here. For example, if the request is
-		// of memory type memoryAll, the memory used might be PMEM until it's full and after that DRAM. If
-		// it's DRAM, amount of PMEM should not be considered and so on. How to find this out in a live
-		// system?
+		// TODO:
+		//   Need to filter based on the memory demotion scheme here. For example,
+		//   if the request is of memory type memoryAll, the memory used might be
+		//   PMEM until it's full and after that DRAM. If it's DRAM, amount of PMEM
+		//   should not be considered and so on. How to find this out in a live
+		//   system?
 
+		bitsToFit := req.MemAmountToAllocate()
 		supply := node.FreeSupply()
 		memType := req.MemoryType()
+		memLimit := supply.MemoryLimit()
 
+		// Note: unspecified implies any type of memory.
 		if memType == memoryUnspec {
-			// The algorithm for handling unspecified memory allocations is the same as for handling a request
-			// with memory type all.
 			memType = memoryAll
 		}
-		bitsToFit := req.MemAmountToAllocate()
+
+		// Note:
+		//   For 'coldstarted' containers, the memory request must fit into
+		//   PMEM exlcusively during the initial warmup period. Therefore,
+		//   for such requests we force the type of memory to PMEM.
+		if req.ColdStart() > 0 {
+			memType = memoryPMEM
+		}
+
+		log.Debug("%s: checking amount of %s memory (need %d)",
+			node.Name(), memType.String(), bitsToFit)
 
 		if memType&memoryPMEM != 0 {
-			if supply.MemoryLimit()[memoryPMEM]-supply.ExtraMemoryReservation(memoryPMEM) >= bitsToFit {
+			usable := memLimit[memoryPMEM] - supply.ExtraMemoryReservation(memoryPMEM)
+			if usable >= bitsToFit {
 				filtered = append(filtered, node)
 				continue
-			} else {
-				// Can't go negative
-				bitsToFit -= supply.MemoryLimit()[memoryPMEM] - supply.ExtraMemoryReservation(memoryPMEM)
 			}
+
+			log.Debug("%s: insufficient PMEM (%d < %d)", node.Name(),
+				memLimit[memoryPMEM], bitsToFit)
+
+			bitsToFit -= usable // Note: guaranteed to be positive
 		}
-		if req.ColdStart() > 0 {
-			// For a "cold start" request, the memory request must fit completely in the PMEM. So reject the node.
-			continue
-		}
+
 		if memType&memoryDRAM != 0 {
-			if supply.MemoryLimit()[memoryDRAM]-supply.ExtraMemoryReservation(memoryDRAM) >= bitsToFit {
+			usable := memLimit[memoryDRAM] - supply.ExtraMemoryReservation(memoryDRAM)
+			if usable >= bitsToFit {
 				filtered = append(filtered, node)
 				continue
-			} else {
-				bitsToFit -= supply.MemoryLimit()[memoryDRAM] - supply.ExtraMemoryReservation(memoryDRAM)
 			}
+
+			log.Debug("%s: insufficient DRAM (%d < %d)", node.Name(),
+				memLimit[memoryDRAM], bitsToFit)
+
+			bitsToFit -= usable // Note: guaranteed to be positive
 		}
+
 		if memType&memoryHBM != 0 {
-			if supply.MemoryLimit()[memoryHBM]-supply.ExtraMemoryReservation(memoryHBM) >= bitsToFit {
+			usable := supply.MemoryLimit()[memoryHBM] - supply.ExtraMemoryReservation(memoryHBM)
+			if usable >= bitsToFit {
 				filtered = append(filtered, node)
+				continue
 			}
+
+			log.Debug("%s insufficient HBM (%d < %d)", node.Name(),
+				memLimit[memoryHBM], bitsToFit)
+
+			log.Debug("%s: => insufficient total memory, filtered out", node.Name())
 		}
 	}
 
