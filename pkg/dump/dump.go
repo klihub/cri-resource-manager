@@ -64,6 +64,7 @@ type dumpreq struct {
 	dir     direction
 	kind    string
 	method  string
+	qualif  string
 	msg     interface{}
 	latency time.Duration
 	sync    chan struct{}
@@ -93,7 +94,7 @@ func Train(methods []string) {
 }
 
 // RequestMessage dumps a CRI request.
-func RequestMessage(kind, name string, req interface{}, sync bool) {
+func RequestMessage(kind, name, qualif string, req interface{}, sync bool) {
 	if !dump.disabled {
 		var ch chan struct{}
 		if sync {
@@ -103,6 +104,7 @@ func RequestMessage(kind, name string, req interface{}, sync bool) {
 			dir:    request,
 			kind:   kind,
 			method: name,
+			qualif: qualif,
 			msg:    req,
 			sync:   ch,
 		}
@@ -113,7 +115,7 @@ func RequestMessage(kind, name string, req interface{}, sync bool) {
 }
 
 // ReplyMessage dumps a CRI reply.
-func ReplyMessage(kind, name string, rpl interface{}, latency time.Duration, sync bool) {
+func ReplyMessage(kind, name, qualif string, rpl interface{}, latency time.Duration, sync bool) {
 	if !dump.disabled {
 		var ch chan struct{}
 		if sync {
@@ -123,6 +125,7 @@ func ReplyMessage(kind, name string, rpl interface{}, latency time.Duration, syn
 			dir:     reply,
 			kind:    kind,
 			method:  name,
+			qualif:  qualif,
 			msg:     rpl,
 			latency: latency,
 			sync:    ch,
@@ -161,9 +164,9 @@ func (d *dumper) run() {
 				d.RUnlock()
 				switch detail {
 				case Name:
-					d.name(req.dir, req.kind, method, req.msg, req.latency)
+					d.name(req.dir, req.kind, method, req.qualif, req.msg, req.latency)
 				case Full:
-					d.full(req.dir, req.kind, method, req.msg, req.latency)
+					d.full(req.dir, req.kind, method, req.qualif, req.msg, req.latency)
 				}
 			}
 			if req.sync != nil {
@@ -232,44 +235,59 @@ func (d *dumper) train(names []string) {
 }
 
 // name does a name-only dump of the given message.
-func (d *dumper) name(dir direction, kind, method string, msg interface{}, latency time.Duration) {
+func (d *dumper) name(dir direction, kind, method, qualif string, msg interface{}, latency time.Duration) {
+	var hdr string
+
 	switch dir {
 	case request:
 		return
 	case reply:
-		if err, ok := msg.(error); ok {
-			d.warn(dir, latency, "(%s) FAILED %s: %v", kind, method, err)
+		if qualif != "" {
+			hdr = qualif + " " + method + " " + dir.arrow() + " "
 		} else {
-			d.line(dir, latency, "(%s) REQUEST %s", kind, method)
+			hdr = method + " " + dir.arrow() + " "
+		}
+		if err, ok := msg.(error); ok {
+			d.warn(dir, latency, hdr+"(%s) FAILED: %v", kind, err)
+		} else {
+			d.line(dir, latency, hdr+"(%s) REQUEST", kind)
 		}
 	}
 }
 
 // full does a full dump of the given message.
-func (d *dumper) full(dir direction, kind, method string, msg interface{}, latency time.Duration) {
+func (d *dumper) full(dir direction, kind, method, qualif string, msg interface{}, latency time.Duration) {
+	var hdr string
+
+	if qualif != "" {
+		hdr = qualif + " " + method + " " + dir.arrow() + " "
+	} else {
+		hdr = method + " " + dir.arrow() + " "
+	}
+
 	switch dir {
 	case request:
 		raw, _ := yaml.Marshal(msg)
 		str := strings.TrimRight(string(raw), "\n")
 		if strings.LastIndexByte(str, '\n') > 0 {
-			d.line(dir, latency, "(%s) REQUEST %s", kind, method)
-			d.block(dir, latency, "    "+method+" => ", str)
+			d.line(dir, latency, hdr+"(%s) REQUEST", kind)
+			d.block(dir, latency, hdr+"    ", str)
 		} else {
-			d.line(dir, latency, "(%s) REQUEST %s => %s", kind, method, str)
+			d.line(dir, latency, hdr+"(%s) REQUEST %s", kind, str)
 		}
 
 	case reply:
 		if err, ok := msg.(error); ok {
-			d.warn(dir, latency, "(%s) FAILED %s", kind, method)
-			d.warn(dir, latency, "  %s <= %s", method, err)
+			d.warn(dir, latency, hdr+"(%s) FAILED", kind)
+			d.warn(dir, latency, hdr+"    %v", err)
 		} else {
 			raw, _ := yaml.Marshal(msg)
 			str := strings.TrimRight(string(raw), "\n")
 			if strings.LastIndexByte(str, '\n') > 0 {
-				d.line(dir, latency, "(%s) REPLY %s", kind, method)
-				d.block(dir, latency, "    "+method+" <= ", str)
+				d.line(dir, latency, hdr+"(%s) REPLY", kind)
+				d.block(dir, latency, hdr+"    ", str)
 			} else {
-				d.line(dir, latency, "(%s) REPLY %s <= %s", kind, method, str)
+				d.line(dir, latency, hdr+"(%s) REPLY %s", kind, str)
 			}
 		}
 	}
@@ -336,6 +354,17 @@ func (d direction) String() string {
 		return "reply"
 	}
 	return "unknown"
+}
+
+// arrow returns an 'ASCII arrow' for the direction.
+func (d direction) arrow() string {
+	switch d {
+	case request:
+		return "=>"
+	case reply:
+		return "<="
+	}
+	return "<=???=>"
 }
 
 // methodName returns the basename of a method.
