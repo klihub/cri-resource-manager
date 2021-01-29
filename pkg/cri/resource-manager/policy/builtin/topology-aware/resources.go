@@ -1331,7 +1331,10 @@ func (cg *grant) ExpandMemset() (bool, error) {
 			limit := supply.MemoryLimit()[memType]
 
 			if extra+granted > limit {
-				log.Debug("%s: extra():%d + granted(): %d > limit: %d -> moving from %s to %s", memType, extra, granted, limit, node.Name(), parent.Name())
+				log.Debug("%s: %s: extra:%d + granted: %d > limit:%d -> moving from %s to %s",
+					cg.GetContainer().PrettyName(), memType,
+					extra, granted, limit,
+					node.Name(), parent.Name())
 				fits = false
 				break
 			}
