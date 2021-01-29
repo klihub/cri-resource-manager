@@ -320,18 +320,25 @@ func (m memoryMap) AddHBM(hbm uint64) {
 func (m memoryMap) String() string {
 	mem, sep := "", ""
 
-	dram, pmem, hbm := m[memoryDRAM], m[memoryPMEM], m[memoryHBM]
+	dram, pmem, hbm, types := m[memoryDRAM], m[memoryPMEM], m[memoryHBM], 0
 	if dram > 0 || pmem > 0 || hbm > 0 {
 		if dram > 0 {
-			mem += "dram:" + strconv.FormatUint(dram, 10)
+			mem += "DRAM " + prettyMem(dram)
 			sep = ", "
+			types++
 		}
 		if pmem > 0 {
-			mem += sep + "pmem:" + strconv.FormatUint(pmem, 10)
+			mem += sep + "PMEM " + prettyMem(pmem)
 			sep = ", "
+			types++
 		}
 		if hbm > 0 {
-			mem += sep + "hbm:" + strconv.FormatUint(hbm, 10)
+			mem += sep + "HBM " + prettyMem(hbm)
+			types++
+		}
+		if types > 1 {
+			mem += sep + "total " + prettyMem(pmem+dram+hbm)
+			types++
 		}
 	}
 
