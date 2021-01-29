@@ -82,6 +82,8 @@ type Supply interface {
 	DumpCapacity() string
 	// DumpAllocatable returns a printable representation of the supply's alloctable resources.
 	DumpAllocatable() string
+	// DumpMemoryState dumps the state of the available and allocated memory.
+	DumpMemoryState(string)
 }
 
 // Request represents CPU and memory resources requested by a container.
@@ -828,6 +830,73 @@ func (cs *supply) DumpAllocatable() string {
 	allocatable += ">"
 
 	return allocatable
+}
+
+// prettyMem formats the given amount as K, M, G, or T units
+func prettyMem(amount uint64) string {
+	units := []string{"K", "M", "G", "T"}
+	a := float64(amount)
+	f := a
+	u := ""
+	for _, unit := range units {
+		if f /= float64(1024); f < 1 {
+			break
+		}
+		a = f
+		u = unit
+	}
+	return strconv.FormatFloat(a, 'f', 2, 64) + u
+}
+
+// DumpMemoryState dumps the state of the available and allocated memory.
+func (cs *supply) DumpMemoryState(prefix string) {
+	memTypes := []memoryType{memoryDRAM, memoryPMEM, memoryHBM}
+	totalFree := uint64(0)
+	totalGranted := uint64(0)
+	for _, kind := range memTypes {
+		free := cs.mem[kind]
+		granted := cs.grantedMem[kind]
+		if free != 0 || granted != 0 {
+			log.Debug(prefix+"- %s: free: %s, granted %s",
+				kind, prettyMem(free), prettyMem(granted))
+		}
+		totalFree += free
+		totalGranted += granted
+	}
+	log.Debug(prefix+"- total free: %s, total granted %s",
+		prettyMem(totalFree), prettyMem(totalGranted))
+
+	printHdr := true
+	if len(cs.extraMemReservations) > 0 {
+		for g, memMap := range cs.extraMemReservations {
+			split := ""
+			sep := ""
+			total := uint64(0)
+			if mem := memMap[memoryDRAM]; mem > 0 {
+				split = "DRAM " + prettyMem(mem)
+				sep = ", "
+				total += mem
+			}
+			if mem := memMap[memoryPMEM]; mem > 0 {
+				split += sep + "PMEM " + prettyMem(mem)
+				sep = ", "
+				total += mem
+			}
+			if mem := memMap[memoryHBM]; mem > 0 {
+				split += sep + "HBMEM " + prettyMem(mem)
+				sep = ", "
+				total += mem
+			}
+			if total > 0 {
+				if printHdr {
+					log.Debug(prefix + "- extra reservations:")
+					printHdr = false
+				}
+				log.Debug(prefix+"  - %s: %s (%s)",
+					g.GetContainer().PrettyName(), prettyMem(total), split)
+			}
+		}
+	}
 }
 
 // newRequest creates a new request for the given container.
