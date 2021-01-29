@@ -529,7 +529,17 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	}
 
 	if remaining > 0 {
-		// FIXME: restore the already allocated memory to the supply
+		log.Debug("%s: allocation from %s fell short %s",
+			cr.GetContainer().PrettyName(), cs.GetNode().Name(),
+			prettyMem(remaining))
+
+		for memType, a := range allocatedMem {
+			if a > 0 {
+				cs.grantedMem[memType] -= a
+				cs.mem[memType] += a
+			}
+		}
+
 		return nil, policyError("internal error: not enough memory at %s", cs.node.Name())
 	}
 
