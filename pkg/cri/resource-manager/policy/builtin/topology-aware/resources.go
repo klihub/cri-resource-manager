@@ -455,12 +455,20 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	amount := cr.MemAmountToAllocate()
 	remaining := amount
 
+	log.Debug("%s: need to allocate %s from %s",
+		cr.GetContainer().PrettyName(), cs.GetNode().Name(), prettyMem(amount))
+
 	// First allocate from PMEM, then DRAM, finally HBM. No need to care about
 	// extra memory reservations since the nodes into which the request won't
 	// fit have already been filtered out.
 
 	if remaining > 0 && memType&memoryPMEM != 0 {
 		available := cs.mem[memoryPMEM] - cs.grantedMem[memoryPMEM]
+
+		log.Debug("%s: trying %s from PMEM, available %s",
+			cr.GetContainer().PrettyName(),
+			prettyMem(remaining), prettyMem(available))
+
 		if remaining < available {
 			cs.grantedMem[memoryPMEM] += remaining
 			cs.mem[memoryPMEM] -= remaining
@@ -477,11 +485,16 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	if remaining > 0 && cr.ColdStart() > 0 {
 		cs.mem[memoryPMEM] += amount - remaining
 		cs.grantedMem[memoryPMEM] = amount - remaining
-		return nil, policyError("internal error: not enough memory at %s, short circuit due to cold start", cs.node.Name())
+		return nil, policyError("internal error: not enough memory at %s, short circuit due to cold start", cs.GetNode().Name())
 	}
 
 	if remaining > 0 && memType&memoryDRAM != 0 {
 		available := cs.mem[memoryDRAM] - cs.grantedMem[memoryDRAM]
+
+		log.Debug("%s: trying %s from DRAM, available %s",
+			cr.GetContainer().PrettyName(),
+			prettyMem(remaining), prettyMem(available))
+
 		if remaining < available {
 			cs.grantedMem[memoryDRAM] += remaining
 			cs.mem[memoryDRAM] -= remaining
@@ -497,6 +510,11 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 
 	if remaining > 0 && memType&memoryHBM != 0 {
 		available := cs.mem[memoryHBM] - cs.grantedMem[memoryHBM]
+
+		log.Debug("%s: trying %s from HBMEM, available %s",
+			cr.GetContainer().PrettyName(),
+			prettyMem(remaining), prettyMem(available))
+
 		if remaining < available {
 			cs.grantedMem[memoryHBM] += remaining
 			cs.mem[memoryHBM] -= remaining
