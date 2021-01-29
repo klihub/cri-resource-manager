@@ -470,7 +470,7 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	// fit have already been filtered out.
 
 	if remaining > 0 && memType&memoryPMEM != 0 {
-		available := cs.mem[memoryPMEM] - cs.grantedMem[memoryPMEM]
+		available := cs.mem[memoryPMEM]
 
 		log.Debug("%s: trying %s from PMEM, available %s",
 			cr.GetContainer().PrettyName(),
@@ -496,7 +496,7 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	}
 
 	if remaining > 0 && memType&memoryDRAM != 0 {
-		available := cs.mem[memoryDRAM] - cs.grantedMem[memoryDRAM]
+		available := cs.mem[memoryDRAM]
 
 		log.Debug("%s: trying %s from DRAM, available %s",
 			cr.GetContainer().PrettyName(),
@@ -516,7 +516,7 @@ func (cs *supply) allocateMemory(cr *request) (memoryMap, error) {
 	}
 
 	if remaining > 0 && memType&memoryHBM != 0 {
-		available := cs.mem[memoryHBM] - cs.grantedMem[memoryHBM]
+		available := cs.mem[memoryHBM]
 
 		log.Debug("%s: trying %s from HBMEM, available %s",
 			cr.GetContainer().PrettyName(),
