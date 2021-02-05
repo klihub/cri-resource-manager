@@ -39,6 +39,7 @@ func (m *resmgr) setupRequestProcessing() error {
 		"StartContainer":  m.StartContainer,
 		"StopContainer":   m.StopContainer,
 		"RemoveContainer": m.RemoveContainer,
+		"ListContainers":  m.ListContainers,
 
 		"UpdateContainerResources": m.UpdateContainer,
 	}
@@ -565,6 +566,61 @@ func (m *resmgr) RemoveContainer(ctx context.Context, method string, request int
 	m.updateIntrospection()
 
 	return reply, rqerr
+}
+
+// ListContainers intercepts CRI requests for listing Containers.
+func (m *resmgr) ListContainers(ctx context.Context, method string, request interface{},
+	handler server.Handler) (interface{}, error) {
+
+	reply, rqerr := handler(ctx, request)
+
+	if rqerr != nil {
+		return reply, rqerr
+	}
+
+	if f := request.(*criapi.ListContainersRequest).Filter; f != nil {
+		switch {
+		case f.Id != "":
+			return reply, nil
+		case f.State != nil:
+			return reply, nil
+		case f.PodSandboxId != "":
+			return reply, nil
+		case len(f.LabelSelector) > 0:
+			return reply, nil
+		}
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	released := []cache.Container{}
+	for _, listed := range reply.(*criapi.ListContainersResponse).Containers {
+		if listed.State != criapi.ContainerState_CONTAINER_EXITED {
+			continue
+		}
+		if c, ok := m.cache.LookupContainer(listed.Id); ok {
+			if c.GetState() == cache.ContainerStateRunning {
+				m.Info("%s: exited, releasing its resources...", c.PrettyName())
+				if err := m.policy.ReleaseResources(c); err != nil {
+					m.Error("%s: failed to release resources for container %s: %v",
+						method, c.PrettyName(), err)
+				}
+				c.UpdateState(cache.ContainerStateExited)
+				released = append(released, c)
+			}
+		}
+	}
+
+	if len(released) > 0 {
+		if err := m.runPostReleaseHooks(ctx, method, released...); err != nil {
+			m.Error("%s: failed to run post-release hooks: %v",
+				method, err)
+		}
+	}
+	m.updateIntrospection()
+
+	return reply, nil
 }
 
 // UpdateContainer intercepts CRI requests for updating Containers.
