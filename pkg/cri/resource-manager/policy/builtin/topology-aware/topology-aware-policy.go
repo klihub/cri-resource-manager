@@ -151,6 +151,8 @@ func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
 		p.AllocateResources(c)
 	}
 
+	p.root.Dump("<post-sync>")
+
 	return nil
 }
 
@@ -213,6 +215,8 @@ func (p *policy) Rebalance() (bool, error) {
 			}
 		}
 	}
+
+	p.root.Dump("<post-rebalance>")
 
 	return true, errors
 }
