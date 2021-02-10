@@ -20,6 +20,9 @@ import (
 
 	criapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 
+	"github.com/intel/cri-resource-manager/pkg/cgroups"
+	v1 "k8s.io/api/core/v1"
+
 	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
 	config "github.com/intel/cri-resource-manager/pkg/cri/resource-manager/config"
@@ -202,6 +205,33 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
 		del = append(del, c)
+	}
+
+	for _, pod := range m.cache.GetPods() {
+		qos := pod.GetQOSClass()
+		uid := pod.GetUID()
+		path, class := cgroups.FindPodCgroupParent(uid, qos)
+		if path == "" {
+			m.Error("* FAILED: %s, %v", qos, uid)
+		} else {
+			if dir := pod.GetCgroupParentDir(); dir != "" && path != dir {
+				m.Error("* FAILED: %s, %v => %s (!= %s), %v", qos, uid, path, dir, class)
+			} else {
+				m.Info("* OK: %s, %v => %s, %v (%s)", qos, uid, path, class, dir)
+			}
+		}
+
+		qos = v1.PodQOSClass("")
+		path, class = cgroups.FindPodCgroupParent(uid, qos)
+		if path == "" {
+			m.Error("* FAILED: %s, %v", qos, uid)
+		} else {
+			if dir := pod.GetCgroupParentDir(); dir != "" && path != dir {
+				m.Error("* FAILED: %s, %v => %s (!= %s), %v", qos, uid, path, dir, class)
+			} else {
+				m.Info("* OK: %s, %v => %s, %v (%s)", qos, uid, path, class, dir)
+			}
+		}
 	}
 
 	return add, del, nil
