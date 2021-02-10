@@ -13,6 +13,7 @@ spec:
     command:
       - sh
       - -c
-      - echo ${NAME}c$(( contnum - 1 )) \$(sleep inf)
+      - echo ${NAME}c$(( contnum - 1 )); trap 'exit 0' SIGUSR1; sleep 999999999 & wait
   "; done )
   terminationGracePeriodSeconds: 1
+  restartPolicy: Always

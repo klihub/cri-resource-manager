@@ -87,18 +87,18 @@ input
 # - "echo gu0c1" matches and kills process only in container gu0c1 in pod gu0
 # - "echo gu0" matches and kills processes in all containers of pod gu0
 input
-    "NAME=gu0 vm-command 'pkill -KILL -f echo\ gu0c0'",
-    "NAME=gu1 vm-command 'pkill -KILL -f echo\ gu1c0'",
-    "NAME=gu2 vm-command 'pkill -KILL -f echo\ gu2c0'",
-    "NAME=gu3 vm-command 'pkill -KILL -f echo\ gu3'",
-    "NAME=gu4 vm-command 'pkill -KILL -f echo\ gu4c'",
-    "NAME=bu0 vm-command 'pkill -KILL -f echo\ bu0c0'",
-    "NAME=bu1 vm-command 'pkill -KILL -f echo\ bu1c0'",
-    "NAME=be0 vm-command 'pkill -KILL -f echo\ be0c0'",
-    "NAME=be1 vm-command 'pkill -KILL -f echo\ be0c0'",
-    "NAME=rgu0 vm-command 'pkill -KILL -f echo\ rgu0c0'",
-    "NAME=rbu0 vm-command 'pkill -KILL -f echo\ rbu0c0'",
-    "NAME=rbe0 vm-command 'pkill -KILL -f echo\ rbe0c0'"
+    "NAME=gu0 vm-command 'pkill -USR1 -f echo\ gu0c0'",
+    "NAME=gu1 vm-command 'pkill -USR1 -f echo\ gu1c0'",
+    "NAME=gu2 vm-command 'pkill -USR1 -f echo\ gu2c0'",
+    "NAME=gu3 vm-command 'pkill -USR1 -f echo\ gu3'",
+    "NAME=gu4 vm-command 'pkill -USR1 -f echo\ gu4c'",
+    "NAME=bu0 vm-command 'pkill -USR1 -f echo\ bu0c0'",
+    "NAME=bu1 vm-command 'pkill -USR1 -f echo\ bu1c0'",
+    "NAME=be0 vm-command 'pkill -USR1 -f echo\ be0c0'",
+    "NAME=be1 vm-command 'pkill -USR1 -f echo\ be0c0'",
+    "NAME=rgu0 vm-command 'pkill -USR1 -f echo\ rgu0c0'",
+    "NAME=rbu0 vm-command 'pkill -USR1 -f echo\ rbu0c0'",
+    "NAME=rbe0 vm-command 'pkill -USR1 -f echo\ rbe0c0'"
 {
     guard {
         v = inputvars(input_name)
