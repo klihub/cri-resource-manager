@@ -527,7 +527,7 @@ type Cachable interface {
 // itself upon startup.
 type Cache interface {
 	// InsertPod inserts a pod into the cache, using a runtime request or reply.
-	InsertPod(id string, msg interface{}) Pod
+	InsertPod(id string, msg interface{}, info map[string]interface{}) Pod
 	// DeletePod deletes a pod from the cache.
 	DeletePod(id string) Pod
 	// LookupPod looks up a pod in the cache.
@@ -860,16 +860,16 @@ func (cch *cache) createCacheID(c *container) string {
 }
 
 // Insert a pod into the cache.
-func (cch *cache) InsertPod(id string, msg interface{}) Pod {
+func (cch *cache) InsertPod(id string, msg interface{}, info map[string]interface{}) Pod {
 	var err error
 
 	p := &pod{cache: cch, ID: id}
 
 	switch msg.(type) {
 	case *cri.RunPodSandboxRequest:
-		err = p.fromRunRequest(msg.(*cri.RunPodSandboxRequest))
+		err = p.fromRunRequest(msg.(*cri.RunPodSandboxRequest), info)
 	case *cri.PodSandbox:
-		err = p.fromListResponse(msg.(*cri.PodSandbox))
+		err = p.fromListResponse(msg.(*cri.PodSandbox), info)
 	default:
 		err = fmt.Errorf("cannot create pod from message %T", msg)
 	}
@@ -1057,7 +1057,7 @@ func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
 			cch.Debug("inserting discovered pod %s...", item.Id)
-			pod := cch.InsertPod(item.Id, item)
+			pod := cch.InsertPod(item.Id, item, nil)
 			add = append(add, pod)
 		}
 	}
