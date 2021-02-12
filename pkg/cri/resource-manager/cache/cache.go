@@ -159,6 +159,10 @@ type Pod interface {
 	GetContainerAffinity(string) []*Affinity
 	// ScopeExpression returns an affinity expression for defining this pod as the scope.
 	ScopeExpression() *resmgr.Expression
+	// GetRuntimeHandler returns the runtime handler for this pod.
+	GetRuntimeHandler() string
+	// GetRuntimeType returns the runtime type for this pod.
+	GetRuntimeType() string
 }
 
 // A cached pod.
@@ -177,6 +181,9 @@ type pod struct {
 
 	Resources *PodResourceRequirements // annotated resource requirements
 	Affinity  *podContainerAffinity    // annotated container affinity
+
+	RuntimeHandler string // runtime handler for this pod (from run request)
+	RuntimeType    string // runtime type for this pod (from status response)
 }
 
 // ContainerState is the container state in the runtime.

@@ -424,3 +424,13 @@ func (p *pod) Eval(key string) interface{} {
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
 }
+
+// GetRuntimeHandler returns the runtime handler for this pod.
+func (p *pod) GetRuntimeHandler() string {
+	return p.RuntimeHandler
+}
+
+// GetRuntimeType returns the runtime type for this pod.
+func (p *pod) GetRuntimeType() string {
+	return p.RuntimeType
+}
