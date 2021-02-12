@@ -35,7 +35,7 @@ const (
 )
 
 // Create a pod from a run request.
-func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
+func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest, info map[string]interface{}) error {
 	cfg := req.Config
 	if cfg == nil {
 		return cacheError("pod %s has no config", p.ID)
@@ -53,6 +53,17 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 	p.Annotations = cfg.Annotations
 	p.CgroupParent = cfg.GetLinux().GetCgroupParent()
 
+	if v, ok := info["runtimeHandler"]; ok {
+		if p.RuntimeHandler, ok = v.(string); !ok {
+			p.cache.Error("runtimeHandler of invalid type %T (%v)", v, v)
+		}
+	}
+	if v, ok := info["runtimeType"]; ok {
+		if p.RuntimeType, ok = v.(string); !ok {
+			p.cache.Error("runtimeType of invalid type %T (%v)", v, v)
+		}
+	}
+
 	p.parseResourceAnnotations()
 	p.extractLabels()
 
@@ -60,7 +71,7 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 }
 
 // Create a pod from a list response.
-func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
+func (p *pod) fromListResponse(pod *cri.PodSandbox, info map[string]interface{}) error {
 	meta := pod.Metadata
 	if meta == nil {
 		return cacheError("pod %s has no reply metadata", p.ID)
@@ -72,6 +83,17 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
 	p.State = PodState(int32(pod.State))
 	p.Labels = pod.Labels
 	p.Annotations = pod.Annotations
+
+	if v, ok := info["runtimeHandler"]; ok {
+		if p.RuntimeHandler, ok = v.(string); !ok {
+			p.cache.Error("unexpected runtimeHandler type %T (%v)", v, v)
+		}
+	}
+	if v, ok := info["runtimeType"]; ok {
+		if p.RuntimeType, ok = v.(string); !ok {
+			p.cache.Error("unexpected runtimeType type %T (%v)", v, v)
+		}
+	}
 
 	p.parseResourceAnnotations()
 	p.extractLabels()

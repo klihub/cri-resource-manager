@@ -16,6 +16,7 @@ package resmgr
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	criapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
@@ -29,6 +30,8 @@ import (
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/events"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/policy"
 	"github.com/intel/cri-resource-manager/pkg/cri/server"
+
+	"github.com/intel/cri-resource-manager/pkg/dump"
 )
 
 // setupRequestProcessing prepares the resource manager for CRI request processing.
@@ -229,9 +232,45 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 	return add, del, nil
 }
 
+// queryPodInfo queries a pod's runtime-specific info using a PodSandboxStatus request.
+func (m *resmgr) queryPodInfo(ctx context.Context, ID string) (map[string]interface{}, error) {
+	status, err := m.relay.Client().PodSandboxStatus(ctx, &criapi.PodSandboxStatusRequest{
+		PodSandboxId: ID,
+		Verbose:      true,
+	})
+	if err != nil {
+		return nil, resmgrError("failed to query status of pod %s: %v", ID, err)
+	}
+
+	dump.ReplyMessage("unsolicited", "PodSandboxStatus", "query-response", status, 0, false)
+
+	return m.decodePodInfo(status.Info), nil
+}
+
+// decodePodInfo tries to decode useful info from the runtime-specific status info JSON blob.
+func (m *resmgr) decodePodInfo(raw map[string]string) map[string]interface{} {
+	decoded := map[string]interface{}{}
+	for k, rawv := range raw {
+		var v interface{}
+		if err := json.Unmarshal([]byte(rawv), &v); err != nil {
+			decoded[k] = rawv
+		} else {
+			decoded[k] = v
+		}
+	}
+
+	if v, ok := decoded["info"]; ok {
+		if info, ok := v.(map[string]interface{}); ok {
+			return info
+		}
+	}
+	return nil
+}
+
 // RunPod intercepts CRI requests for Pod creation.
 func (m *resmgr) RunPod(ctx context.Context, method string, request interface{},
 	handler server.Handler) (interface{}, error) {
+	var info map[string]interface{}
 
 	reply, rqerr := handler(ctx, request)
 	if rqerr != nil {
@@ -239,11 +278,15 @@ func (m *resmgr) RunPod(ctx context.Context, method string, request interface{},
 		return reply, rqerr
 	}
 
+	podID := reply.(*criapi.RunPodSandboxResponse).PodSandboxId
+	if request.(*criapi.RunPodSandboxRequest).RuntimeHandler != "" {
+		info, _ = m.queryPodInfo(ctx, podID)
+	}
+
 	m.Lock()
 	defer m.Unlock()
 
-	podID := reply.(*criapi.RunPodSandboxResponse).PodSandboxId
-	pod := m.cache.InsertPod(podID, request)
+	pod := m.cache.InsertPod(podID, request, info)
 	m.updateIntrospection()
 
 	// search for any lingering old version and clean up if found
