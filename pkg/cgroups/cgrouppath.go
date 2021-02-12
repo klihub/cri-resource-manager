@@ -27,20 +27,24 @@ import (
 	logger "github.com/intel/cri-resource-manager/pkg/log"
 )
 
-const (
-	// RootDir is the sysfs cgroup parent directory path.
-	RootDir = "/sys/fs/cgroup"
-	// CpusetDir is the mount path for the v1 cpuset controller.
-	CpusetDir = RootDir + "/cpuset"
-)
-
 var (
+	// Root is the common sysfs directory for mounting cgroup controllers.
+	Root = "/sys/fs/cgroup"
 	// V2path is the mount point for the cgroup V2 pseudofilesystem.
 	V2path string
 	// KubeletRoot is the --cgroup-root passed to kubelet.
 	KubeletRoot string
 	// our logger instance
 	pathlog = logger.NewLogger("cgroups")
+)
+
+const (
+	// Cpuset is the name and mount path of the cpuset controller.
+	Cpuset = "cpuset"
+	// RootDir is the sysfs cgroup parent directory path.
+	RootDir = "/sys/fs/cgroup"
+	// CpusetDir is the mount path for the v1 cpuset controller.
+	CpusetDir = RootDir + "/cpuset"
 )
 
 // FindPodCgroupParent brute-force searches for a pod cgroup parent dir.
