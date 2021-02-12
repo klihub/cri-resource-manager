@@ -16,6 +16,8 @@ package cri
 
 import (
 	"fmt"
+	"os"
+	"path"
 
 	"github.com/intel/cri-resource-manager/pkg/cri/client"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/cache"
@@ -28,6 +30,13 @@ import (
 const (
 	// CRIController is the name of this controller.
 	CRIController = cache.CRI
+)
+
+var (
+	// runtime-specific RuntimeTypes referring to Kata
+	kataRuntimeTypes = map[string]bool{
+		"io.containerd.kata.v2": true,
+	}
 )
 
 // crictl encapsulated the runtime state of our CRI enforcement/controller.
@@ -90,7 +99,18 @@ func (ctl *crictl) PreCreateHook(c cache.Container) error {
 	if create.Config.Linux == nil {
 		create.Config.Linux = &criapi.LinuxContainerConfig{}
 	}
+
 	create.Config.Linux.Resources = c.GetLinuxResources()
+
+	if isKataContainer(c) {
+		log.Info("%s: is a Kata container, not enforcing via CRI...",
+			c.PrettyName())
+
+		create.Config.Linux.Resources.CpusetCpus = ""
+		create.Config.Linux.Resources.CpusetMems = ""
+
+		return nil
+	}
 
 	c.ClearPending(CRIController)
 
@@ -99,11 +119,78 @@ func (ctl *crictl) PreCreateHook(c cache.Container) error {
 
 // PreStartHook is the CRI controller pre-start hook.
 func (ctl *crictl) PreStartHook(c cache.Container) error {
+	if !isKataContainer(c) {
+		return nil
+	}
+
+	resources := c.GetLinuxResources()
+	if resources == nil {
+		return nil
+	}
+
+	log.Warn("%s: setting cpuset.cpus, cpuset.mems under Kata...",
+		c.PrettyName())
+
+	pod, ok := c.GetPod()
+	if !ok {
+		return nil
+	}
+
+	cgroup := "/vc/kata_" + pod.GetID()
+
+	if v := resources.CpuShares; v != 0 {
+		entry := path.Join("/sys/fs/cgroup/cpu", cgroup, "cpu.shares")
+		if err := writeCgroupEntry(entry, v); err != nil {
+			return err
+		}
+	}
+	if v := resources.CpuPeriod; v != 0 {
+		entry := path.Join("/sys/fs/cgroup/cpu", cgroup, "cpu.cfs_period_us")
+		if err := writeCgroupEntry(entry, v); err != nil {
+			return err
+		}
+	}
+	if v := resources.CpuQuota; v != 0 {
+		entry := path.Join("/sys/fs/cgroup/cpu", cgroup, "cpu.cfs_quota_us")
+		if err := writeCgroupEntry(entry, v); err != nil {
+			return err
+		}
+	}
+	if v := resources.CpusetCpus; v != "" {
+		entry := path.Join("/sys/fs/cgroup/cpuset", cgroup, "cpuset.cpus")
+		if err := writeCgroupEntry(entry, v); err != nil {
+			return err
+		}
+	}
+	if v := resources.CpusetMems; v != "" {
+		entry := path.Join("/sys/fs/cgroup/cpuset", cgroup, "cpuset.mems")
+		if err := writeCgroupEntry(entry, v); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // PostStartHook is the CRI controller post-start hook.
 func (ctl *crictl) PostStartHook(c cache.Container) error {
+	return nil
+}
+
+// writeCgroupEntry writes an value to a cgroup entry.
+func writeCgroupEntry(entry string, v interface{}) error {
+	value := fmt.Sprintf("%v\n", v)
+
+	log.Info("*** writing %v to %q", v, entry)
+
+	f, err := os.OpenFile(entry, os.O_WRONLY, 0644)
+	if err != nil {
+		return criError("%q: failed to write %v: %v", entry, v, err)
+	}
+	defer f.Close()
+	if _, err := f.Write([]byte(value)); err != nil {
+		return criError("%q: failed to write %v: %v", entry, v, err)
+	}
 	return nil
 }
 
@@ -143,6 +230,16 @@ func (ctl *crictl) PostUpdateHook(c cache.Container) error {
 // PostStop is the CRI controller post-stop hook.
 func (ctl *crictl) PostStopHook(c cache.Container) error {
 	return nil
+}
+
+// isKataContainer returns true if the container is a Kata container.
+func isKataContainer(c cache.Container) bool {
+	if pod, ok := c.GetPod(); ok {
+		if kataRuntimeTypes[pod.GetRuntimeType()] {
+			return true
+		}
+	}
+	return false
 }
 
 // criError creates an CRI-controller-specific formatted error message.
