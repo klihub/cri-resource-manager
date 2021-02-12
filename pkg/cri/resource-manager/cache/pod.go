@@ -53,6 +53,23 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 	p.Annotations = cfg.Annotations
 	p.CgroupParent = cfg.GetLinux().GetCgroupParent()
 
+	if v, ok := info["runtimeHandler"]; ok {
+		if p.RuntimeHandler, ok = v.(string); !ok {
+			p.cache.Error("runtimeHandler of invalid type %T (%v)", v, v)
+		}
+	}
+	if v, ok := info["runtimeType"]; ok {
+		if p.RuntimeType, ok = v.(string); !ok {
+			p.cache.Error("runtimeType of invalid type %T (%v)", v, v)
+		}
+	}
+	for t, c := range runtimeTypes {
+		if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
+			p.RuntimeClass = c
+			break
+		}
+	}
+
 	p.parseResourceAnnotations()
 	p.extractLabels()
 
@@ -72,6 +89,25 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
 	p.State = PodState(int32(pod.State))
 	p.Labels = pod.Labels
 	p.Annotations = pod.Annotations
+
+	if v, ok := info["runtimeHandler"]; ok {
+		if p.RuntimeHandler, ok = v.(string); !ok {
+			p.cache.Error("unexpected runtimeHandler type %T (%v)", v, v)
+		}
+	} else {
+		p.RuntimeHandler = CRI
+	}
+	if v, ok := info["runtimeType"]; ok {
+		if p.RuntimeType, ok = v.(string); !ok {
+			p.cache.Error("unexpected runtimeType type %T (%v)", v, v)
+		}
+	}
+	for t, c := range runtimeTypes {
+		if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
+			p.RuntimeClass = c
+			break
+		}
+	}
 
 	p.parseResourceAnnotations()
 	p.extractLabels()
@@ -423,4 +459,19 @@ func (p *pod) Eval(key string) interface{} {
 	default:
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
+}
+
+// GetRuntimeHandler returns the runtime handler for this pod.
+func (p *pod) GetRuntimeHandler() string {
+	return p.RuntimeHandler
+}
+
+// GetRuntimeType returns the runtime type for this pod.
+func (p *pod) GetRuntimeType() string {
+	return p.RuntimeType
+}
+
+// GetRuntimeClass returns the runtime controller for this pod.
+func (p *pod) GetRuntimeClass() string {
+	return p.RuntimeClass
 }
