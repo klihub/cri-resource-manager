@@ -542,6 +542,15 @@ func (m *mockContainer) GetRuntimeType() string {
 func (m *mockContainer) GetRuntimeClass() string {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetProcesses() ([]string, error) {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetTasks() ([]string, error) {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCgroupDir() string {
+	panic("unimplemented")
+}
 
 type mockPod struct {
 	name                               string
@@ -648,6 +657,12 @@ func (m *mockPod) GetRuntimeType() string {
 	panic("unimplemented")
 }
 func (m *mockPod) GetRuntimeClass() string {
+	panic("unimplemented")
+}
+func (m *mockPod) GetProcesses(bool) ([]string, error) {
+	panic("unimplemented")
+}
+func (m *mockPod) GetTasks(bool) ([]string, error) {
 	panic("unimplemented")
 }
 
