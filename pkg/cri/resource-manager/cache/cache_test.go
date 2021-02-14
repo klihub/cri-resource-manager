@@ -26,6 +26,7 @@ import (
 	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 
+	"github.com/intel/cri-resource-manager/pkg/cgroups"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/kubernetes"
 )
 
@@ -70,10 +71,6 @@ func removeTmpCache(dir string) {
 }
 
 func createFakePod(cch Cache, fp *fakePod) (Pod, error) {
-	if string(fp.qos) == "" {
-		fp.qos = v1.PodQOSBurstable
-	}
-
 	if fp.labels == nil {
 		fp.labels = make(map[string]string)
 	}
@@ -82,7 +79,13 @@ func createFakePod(cch Cache, fp *fakePod) (Pod, error) {
 	fp.labels[kubetypes.KubernetesPodUIDLabel] = fp.uid
 	nextFakePodID++
 
-	qos := strings.ToLower(string(fp.qos))
+	if string(fp.qos) == "" {
+		fp.qos = v1.PodQOSBurstable
+	}
+
+	pathClass := strings.ToLower(string(fp.qos))
+	pathGenFns := cgroups.GetPodPathGenerators()
+	cgroupPath := pathGenFns[0](fp.uid, pathClass)[0]
 	req := &cri.RunPodSandboxRequest{
 		Config: &cri.PodSandboxConfig{
 			Metadata: &cri.PodSandboxMetadata{
@@ -93,15 +96,14 @@ func createFakePod(cch Cache, fp *fakePod) (Pod, error) {
 			Labels:      fp.labels,
 			Annotations: fp.annotations,
 			Linux: &cri.LinuxPodSandboxConfig{
-				CgroupParent: "/kubepods.slice/kubepods-" + qos + ".slice/" +
-					"kubepods-" + string(fp.qos) + "-pod-" + fp.id + ".slice",
+				CgroupParent: cgroupPath,
 			},
 		},
 	}
 	fp.podCfg = req.Config
 
 	cch.(*cache).Debug("*** => creating Pod: %+v\n", *req)
-	p := cch.InsertPod(fp.id, req)
+	p := cch.InsertPod(fp.id, req, nil)
 	cch.(*cache).Debug("*** <= created Pod: %+v\n", *p.(*pod))
 	return p, nil
 }
