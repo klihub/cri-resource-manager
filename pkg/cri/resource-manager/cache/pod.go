@@ -314,6 +314,11 @@ func (p *pod) GetEffectiveAnnotation(key, container string) (string, bool) {
 	if v, ok := p.Annotations[key+"/container."+container]; ok {
 		return v, true
 	}
+	return p.GetPodAnnotation(key)
+}
+
+// Get the effective pod-level annotation for the given key.
+func (p *pod) GetPodAnnotation(key string) (string, bool) {
 	if v, ok := p.Annotations[key+"/pod"]; ok {
 		return v, true
 	}
