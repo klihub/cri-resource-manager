@@ -672,6 +672,12 @@ func (m *mockPod) GetProcesses(bool) ([]string, error) {
 func (m *mockPod) GetTasks(bool) ([]string, error) {
 	panic("unimplemented")
 }
+func (m *mockPod) GetRDTClass() string {
+	panic("unimplemented")
+}
+func (m *mockPod) GetBlockIOClass() string {
+	panic("unimplemented")
+}
 
 type mockCache struct {
 	returnValueForGetPolicyEntry   bool
