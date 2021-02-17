@@ -595,8 +595,10 @@ type Cache interface {
 	// Save requests a cache save.
 	Save() error
 
-	// Refresh requests purging old entries and creating new ones.
-	Refresh(rpl interface{}) ([]Pod, []Pod, []Container, []Container)
+	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
+	RefreshPods(*cri.ListPodSandboxResponse, map[string]*PodInfo) ([]Pod, []Pod, []Container)
+	// RefreshContainers purges/inserts stale/new containers using a container list response.
+	RefreshContainers(*cri.ListContainersResponse) ([]Container, []Container)
 
 	// Get the container (data) directory for a container.
 	ContainerDirectory(string) string
@@ -873,9 +875,9 @@ func (cch *cache) InsertPod(id string, msg interface{}, info *PodInfo) Pod {
 
 	switch msg.(type) {
 	case *cri.RunPodSandboxRequest:
-		err = p.fromRunRequest(msg.(*cri.RunPodSandboxRequest), nil)
+		err = p.fromRunRequest(msg.(*cri.RunPodSandboxRequest), info)
 	case *cri.PodSandbox:
-		err = p.fromListResponse(msg.(*cri.PodSandbox), nil)
+		err = p.fromListResponse(msg.(*cri.PodSandbox), info)
 	default:
 		err = fmt.Errorf("cannot create pod from message %T", msg)
 	}
@@ -1031,24 +1033,35 @@ func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 	return nil, false
 }
 
-// Refresh the cache from an (assumed to be unfiltered) pod or container list response.
-func (cch *cache) Refresh(rpl interface{}) ([]Pod, []Pod, []Container, []Container) {
-	switch rpl.(type) {
-	case *cri.ListPodSandboxResponse:
-		add, del, containers := cch.RefreshPods(rpl.(*cri.ListPodSandboxResponse))
-		return add, del, nil, containers
+// ExtractPodInfo tries to extract useful pod info from a JSON blob in a PodStandboxStatus response.
+func ExtractPodInfo(status *cri.PodSandboxStatusResponse) (*PodInfo, error) {
+	var info map[string]interface{}
+	var ok bool
 
-	case *cri.ListContainersResponse:
-		add, del := cch.RefreshContainers(rpl.(*cri.ListContainersResponse))
-		return nil, nil, add, del
+	raw, ok := status.Info["info"]
+	if !ok {
+		return nil, cacheError("no 'info' key found in pod status response info")
+	}
+	if err := json.Unmarshal([]byte(raw), &info); err != nil {
+		return nil, cacheError("failed to unmarshal pod status response info")
 	}
 
-	cch.Error("can't refresh cache using a %T message", rpl)
-	return nil, nil, nil, nil
+	podInfo := &PodInfo{}
+
+	h := info["runtimeHandler"]
+	if podInfo.RuntimeHandler, ok = h.(string); !ok {
+		return nil, cacheError("unexpected runtimeHandler of type %T", h)
+	}
+	t := info["runtimeType"]
+	if podInfo.RuntimeType, ok = t.(string); !ok {
+		return nil, cacheError("unexpected runtimeType of type %T", t)
+	}
+
+	return podInfo, nil
 }
 
-// Refresh pods, purging stale and inserting new ones using a pod sandbox list response.
-func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []Container) {
+// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
+func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse, info map[string]*PodInfo) ([]Pod, []Pod, []Container) {
 	valid := make(map[string]struct{})
 
 	add := []Pod{}
@@ -1059,7 +1072,7 @@ func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
 			cch.Debug("inserting discovered pod %s...", item.Id)
-			pod := cch.InsertPod(item.Id, item, nil)
+			pod := cch.InsertPod(item.Id, item, info[item.Id])
 			add = append(add, pod)
 		}
 	}
@@ -1086,7 +1099,7 @@ func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []
 	return add, del, containers
 }
 
-// Refresh pods, purging stale and inserting new ones using a pod sandbox list response.
+// RefreshContainers purges/inserts stale/new containers using a container list response.
 func (cch *cache) RefreshContainers(msg *cri.ListContainersResponse) ([]Container, []Container) {
 	valid := make(map[string]struct{})
 
