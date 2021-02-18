@@ -19,6 +19,7 @@ import (
 	"path"
 
 	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
+	logger "github.com/intel/cri-resource-manager/pkg/log"
 )
 
 const (
@@ -28,8 +29,8 @@ const (
 	KataClass = "kata"
 )
 
-// classmap defines handler-class mapping for known runtime classes
-type ClassMap struct {
+// Config defines handler-class mapping for known runtime classes
+type Config struct {
 	Classes []Class
 }
 
@@ -41,15 +42,18 @@ type Class struct {
 	HandlerPattern string
 }
 
-// our runtime classmap
-var classMap = defaultClasses().(*ClassMap)
+// our runtime configuration
+var cfg = defaultConfig().(*Config)
+
+// our logger instance
+var log = logger.NewLogger("runtime")
 
 // MatchHandler searches a class matching the handler.
 func MatchHandler(handler string) string {
 	if handler == "" {
 		return CriClass
 	}
-	for _, class := range classMap.Classes {
+	for _, class := range cfg.Classes {
 		if class.HandlerPattern == "" {
 			return class.Name
 		}
@@ -60,9 +64,9 @@ func MatchHandler(handler string) string {
 	return ""
 }
 
-// defaultClasses
-func defaultClasses() interface{} {
-	return &ClassMap{
+// defaultConfig returns the default runtime class configuration.
+func defaultConfig() interface{} {
+	return &Config{
 		Classes: []Class{
 			{Name: KataClass, HandlerPattern: "kata*"},
 			{Name: CriClass, HandlerPattern: ""},
@@ -70,18 +74,24 @@ func defaultClasses() interface{} {
 	}
 }
 
-// checkClasses checks classMap for bad patterns.
-func checkClasses(event pkgcfg.Event, src pkgcfg.Source) error {
-	for _, class := range classMap.Classes {
+// checkConfig checks our runtime configuration for bad patterns.
+func checkConfig(event pkgcfg.Event, src pkgcfg.Source) error {
+	for _, class := range cfg.Classes {
 		if _, err := path.Match(class.HandlerPattern, "test"); err != nil {
 			return fmt.Errorf("invalid handler pattern %q for class %q: %v",
 				class.HandlerPattern, class.Name, err)
 		}
 	}
+
+	log.Info("handler/class mapping:")
+	for _, class := range cfg.Classes {
+		log.Info("- %q => %q", class.HandlerPattern, class.Name)
+	}
+
 	return nil
 }
 
 func init() {
-	pkgcfg.Register("runtime", "runtime handler/class mapping", classMap, defaultClasses,
-		pkgcfg.WithNotify(checkClasses))
+	pkgcfg.Register("runtime", "runtime handler/class mapping", cfg, defaultConfig,
+		pkgcfg.WithNotify(checkConfig))
 }
