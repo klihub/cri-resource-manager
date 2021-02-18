@@ -188,10 +188,12 @@ func FindContainerDir(podCgroupDir, podID, ID, runtimeClass string) string {
 	if runtimeClass == "kata" {
 		base := path.Base(podCgroupDir)
 		dirs = []string{
-			// kata v2
+			// kata v2 + containerd
 			path.Join(cpusetDir, "vc", "kata_"+base+":cri-containerd:"+podID),
-			// kata v1
+			// kata v1 + containerd
 			path.Join(cpusetDir, "vc", "kata_"+podID),
+			// kata v1 + crio
+			path.Join(cpusetDir, podCgroupDir, "crio-"+podID+".scope"),
 		}
 	} else {
 		dirs = []string{
