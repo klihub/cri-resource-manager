@@ -25,6 +25,7 @@ import (
 	"github.com/intel/cri-resource-manager/pkg/apis/resmgr"
 	"github.com/intel/cri-resource-manager/pkg/cgroups"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/kubernetes"
+	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/runtimes"
 )
 
 const (
@@ -58,14 +59,18 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest, info *PodInfo) error
 		p.cache.Info("%s: QoS class %s", p.Name, p.QOSClass)
 	}
 
-	if info != nil {
+	if req.RuntimeHandler != "" {
+		p.RuntimeClass = runtimes.MatchHandler(req.RuntimeHandler)
+	}
+
+	if p.RuntimeClass == "" && info != nil {
 		p.RuntimeHandler = info.RuntimeHandler
 		p.RuntimeType = info.RuntimeType
-	}
-	for t, c := range runtimeTypes {
-		if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
-			p.RuntimeClass = c
-			break
+		for t, c := range runtimeTypes {
+			if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
+				p.RuntimeClass = c
+				break
+			}
 		}
 	}
 
@@ -90,14 +95,18 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox, info *PodInfo) error {
 	p.Labels = pod.Labels
 	p.Annotations = pod.Annotations
 
-	if info != nil {
+	if pod.RuntimeHandler != "" {
+		p.RuntimeClass = runtimes.MatchHandler(pod.RuntimeHandler)
+	}
+
+	if p.RuntimeClass == "" && info != nil {
 		p.RuntimeHandler = info.RuntimeHandler
 		p.RuntimeType = info.RuntimeType
-	}
-	for t, c := range runtimeTypes {
-		if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
-			p.RuntimeClass = c
-			break
+		for t, c := range runtimeTypes {
+			if p.RuntimeType == t || (t != "" && strings.HasPrefix(p.RuntimeType, t)) {
+				p.RuntimeClass = c
+				break
+			}
 		}
 	}
 
