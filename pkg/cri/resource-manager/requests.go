@@ -165,21 +165,37 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 	m.Info("synchronizing cache state with CRI runtime...")
 
 	add, del := []cache.Container{}, []cache.Container{}
-
 	pods, err := m.relay.Client().ListPodSandbox(ctx, &criapi.ListPodSandboxRequest{})
 	if err != nil {
-		return nil, nil, resmgrError("cache synchronization container query failed: %v", err)
+		return nil, nil, resmgrError("cache synchronization pod query failed: %v", err)
 	}
-	_, _, added, deleted := m.cache.Refresh(pods)
-	for _, c := range added {
-		if c.GetState() != cache.ContainerStateRunning {
-			m.Info("ignoring discovered container %s (in state %v)...",
-				c.GetID(), c.GetState())
-			continue
+
+	omitsRuntimeHandler := true
+	for _, pod := range pods.Items {
+		if pod.RuntimeHandler != "" {
+			omitsRuntimeHandler = false
 		}
-		m.Info("discovered out-of-sync running container %s...", c.GetID())
-		add = append(add, c)
+		if pod.RuntimeHandler == "" && omitsRuntimeHandler {
+			status, err := m.relay.Client().PodSandboxStatus(ctx,
+				&criapi.PodSandboxStatusRequest{
+					PodSandboxId: pod.Id,
+					Verbose:      true,
+				})
+			if err != nil {
+				m.Error("%s: status query failed: %v", pod.Id, err)
+				continue
+			}
+			pod.RuntimeHandler, err = cache.ExtractRuntimeHandler(status)
+			if err != nil {
+				m.Error("%v", err)
+				continue
+			}
+			if pod.RuntimeHandler != "" {
+				m.Info("%s: discovered runtimeHandler: %q", pod.RuntimeHandler)
+			}
+		}
 	}
+	_, _, deleted := m.cache.RefreshPods(pods)
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
 		del = append(del, c)
@@ -189,7 +205,7 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 	if err != nil {
 		return nil, nil, resmgrError("cache synchronization container query failed: %v", err)
 	}
-	_, _, added, deleted = m.cache.Refresh(containers)
+	added, deleted := m.cache.RefreshContainers(containers)
 	for _, c := range added {
 		if c.GetState() != cache.ContainerStateRunning {
 			m.Info("ignoring discovered container %s (in state %v)...",
@@ -217,10 +233,11 @@ func (m *resmgr) RunPod(ctx context.Context, method string, request interface{},
 		return reply, rqerr
 	}
 
+	podID := reply.(*criapi.RunPodSandboxResponse).PodSandboxId
+
 	m.Lock()
 	defer m.Unlock()
 
-	podID := reply.(*criapi.RunPodSandboxResponse).PodSandboxId
 	pod := m.cache.InsertPod(podID, request)
 	m.updateIntrospection()
 

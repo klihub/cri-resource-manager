@@ -533,6 +533,15 @@ func (m *mockContainer) String() string {
 func (m *mockContainer) Eval(string) interface{} {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetRuntimeHandler() string {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetRuntimeType() string {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetRuntimeClass() string {
+	panic("unimplemented")
+}
 
 type mockPod struct {
 	name                               string
@@ -632,6 +641,15 @@ func (m *mockPod) String() string {
 func (m *mockPod) Eval(string) interface{} {
 	panic("unimplemented")
 }
+func (m *mockPod) GetRuntimeHandler() string {
+	panic("unimplemented")
+}
+func (m *mockPod) GetRuntimeType() string {
+	panic("unimplemented")
+}
+func (m *mockPod) GetRuntimeClass() string {
+	panic("unimplemented")
+}
 
 type mockCache struct {
 	returnValueForGetPolicyEntry   bool
@@ -718,7 +736,10 @@ func (m *mockCache) SetAdjustment(*config.Adjustment) (bool, map[string]error) {
 func (m *mockCache) Save() error {
 	return nil
 }
-func (m *mockCache) Refresh(interface{}) ([]cache.Pod, []cache.Pod, []cache.Container, []cache.Container) {
+func (m *mockCache) RefreshPods(*cri.ListPodSandboxResponse) ([]cache.Pod, []cache.Pod, []cache.Container) {
+	panic("unimplemented")
+}
+func (m *mockCache) RefreshContainers(*cri.ListContainersResponse) ([]cache.Container, []cache.Container) {
 	panic("unimplemented")
 }
 func (m *mockCache) ContainerDirectory(string) string {

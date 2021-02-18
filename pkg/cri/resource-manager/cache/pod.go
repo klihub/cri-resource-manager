@@ -24,6 +24,7 @@ import (
 	"github.com/intel/cri-resource-manager/pkg/apis/resmgr"
 	"github.com/intel/cri-resource-manager/pkg/cgroups"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/kubernetes"
+	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/runtimes"
 )
 
 const (
@@ -57,6 +58,7 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 		p.cache.Info("%s: QoS class %s", p.Name, p.QOSClass)
 	}
 
+	p.RuntimeClass = runtimes.MatchHandler(req.RuntimeHandler)
 	p.parseResourceAnnotations()
 
 	return nil
@@ -77,6 +79,7 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
 	p.Labels = pod.Labels
 	p.Annotations = pod.Annotations
 
+	p.RuntimeClass = runtimes.MatchHandler(pod.RuntimeHandler)
 	p.parseResourceAnnotations()
 
 	if p.State == PodStateReady {
@@ -415,4 +418,19 @@ func (p *pod) Eval(key string) interface{} {
 	default:
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
+}
+
+// GetRuntimeHandler returns the runtime handler for this pod.
+func (p *pod) GetRuntimeHandler() string {
+	return p.RuntimeHandler
+}
+
+// GetRuntimeType returns the runtime type for this pod.
+func (p *pod) GetRuntimeType() string {
+	return p.RuntimeType
+}
+
+// GetRuntimeClass returns the runtime controller for this pod.
+func (p *pod) GetRuntimeClass() string {
+	return p.RuntimeClass
 }
