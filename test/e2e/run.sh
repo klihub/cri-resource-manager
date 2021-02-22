@@ -479,7 +479,7 @@ launch() { # script API
         "cri-resmgr-agent")
             host-command "$SCP \"$adjustment_schema\" $VM_SSH_USER@$VM_IP:" ||
                 command-error "copying \"$adjustment_schema\" to VM failed"
-            vm-command "kubectl delete -f $(basename "$adjustment_schema"); kubectl create -f $(basename "$adjustment_schema")"
+            vm-command "kubectl delete -f $(basename "$adjustment_schema") || :; kubectl create -f $(basename "$adjustment_schema")"
             launch_cmd="NODE_NAME=\$(hostname) cri-resmgr-agent -kubeconfig /root/.kube/config $cri_resmgr_agent_extra_args"
             vm-command-q "echo '$launch_cmd' >cri-resmgr-agent.launch.sh; rm -f cri-resmgr-agent.output.txt"
             vm-command "$launch_cmd >cri-resmgr-agent.output.txt 2>&1 &"
