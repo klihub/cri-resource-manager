@@ -498,6 +498,31 @@ vm-install-cri-resmgr() {
     fi
 }
 
+vm-install-cri-resmgr-agent() {
+    prefix=/usr/local
+    # shellcheck disable=SC2154
+    if [ "$binsrc" == "github" ]; then
+        vm-install-golang
+        vm-install-pkg make
+        vm-command "go get -d -v github.com/intel/cri-resource-manager"
+        CRI_RESMGR_SOURCE_DIR=$(awk '/package.*cri-resource-manager/{print $NF}' <<< "$COMMAND_OUTPUT")
+        vm-command "cd $CRI_RESMGR_SOURCE_DIR && make install && cd -"
+    else
+        local bin_change
+        local src_change
+        bin_change=$(stat --format "%Z" "$BIN_DIR/cri-resmgr-agent")
+        src_change=$(find "$HOST_PROJECT_DIR" -name '*.go' -type f -print0 | xargs -0 stat --format "%Z" | sort -n | tail -n 1)
+        if [[ "$src_change" > "$bin_change" ]]; then
+            echo "WARNING:"
+            echo "WARNING: Source files changed - installing possibly outdated binaries from"
+            echo "WARNING: $BIN_DIR/"
+            echo "WARNING:"
+            sleep "${warning_delay:-0}"
+        fi
+        vm-put-file "$BIN_DIR/cri-resmgr-agent" "$prefix/bin/cri-resmgr-agent"
+    fi
+}
+
 vm-cri-import-image() {
     local image_name="$1"
     local image_tar="$2"
