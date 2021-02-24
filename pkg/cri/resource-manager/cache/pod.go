@@ -66,7 +66,7 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 }
 
 // Create a pod from a list response.
-func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
+func (p *pod) fromListResponse(pod *cri.PodSandbox, status *PodStatus) error {
 	meta := pod.Metadata
 	if meta == nil {
 		return cacheError("pod %s has no reply metadata", p.ID)
@@ -80,13 +80,16 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox) error {
 	p.Labels = pod.Labels
 	p.Annotations = pod.Annotations
 
-	p.RuntimeClass = runtimes.MatchHandler(pod.RuntimeHandler)
-	p.parseResourceAnnotations()
-
-	if p.State == PodStateReady {
-		p.discoverCgroupParentDir()
+	if pod.RuntimeHandler == "" {
+		pod.RuntimeHandler, _ = status.RuntimeHandler()
 	}
 
+	if p.State == PodStateReady {
+		p.CgroupParent, _ = status.CgroupParent()
+	}
+
+	p.RuntimeClass = runtimes.MatchHandler(pod.RuntimeHandler)
+	p.parseResourceAnnotations()
 	p.setDefaults()
 
 	return nil

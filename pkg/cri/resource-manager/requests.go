@@ -170,32 +170,11 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 		return nil, nil, resmgrError("cache synchronization pod query failed: %v", err)
 	}
 
-	omitsRuntimeHandler := true
+	status := map[string]*cache.PodStatus{}
 	for _, pod := range pods.Items {
-		if pod.RuntimeHandler != "" {
-			omitsRuntimeHandler = false
-		}
-		if pod.RuntimeHandler == "" && omitsRuntimeHandler {
-			status, err := m.relay.Client().PodSandboxStatus(ctx,
-				&criapi.PodSandboxStatusRequest{
-					PodSandboxId: pod.Id,
-					Verbose:      true,
-				})
-			if err != nil {
-				m.Error("%s: status query failed: %v", pod.Id, err)
-				continue
-			}
-			pod.RuntimeHandler, err = cache.ExtractRuntimeHandler(status)
-			if err != nil {
-				m.Error("%v", err)
-				continue
-			}
-			if pod.RuntimeHandler != "" {
-				m.Info("%s: discovered runtimeHandler: %q", pod.RuntimeHandler)
-			}
-		}
+		m.queryPodStatus(ctx, pod.Id, status)
 	}
-	_, _, deleted := m.cache.RefreshPods(pods)
+	_, _, deleted := m.cache.RefreshPods(pods, status)
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
 		del = append(del, c)
@@ -223,6 +202,42 @@ func (m *resmgr) syncWithCRI(ctx context.Context) ([]cache.Container, []cache.Co
 	return add, del, nil
 }
 
+func (m *resmgr) queryPodStatus(ctx context.Context, podID string, status map[string]*cache.PodStatus) error {
+	response, err := m.relay.Client().PodSandboxStatus(ctx,
+		&criapi.PodSandboxStatusRequest{
+			PodSandboxId: podID,
+			Verbose:      true,
+		})
+	if err != nil {
+		return resmgrError("%s: failed to query pod status: %v", podID, err)
+	}
+
+	s := &cache.PodStatus{Status: response}
+	status[podID] = s
+
+	handler, err := s.RuntimeHandler()
+	if err != nil {
+		return resmgrError("%s: failed to process pod status response: %v",
+			podID, err)
+	}
+	if handler != "" {
+		m.Info("%s: discovered runtime handler %q", podID, handler)
+	}
+
+	dir, err := s.CgroupParent()
+	if err != nil {
+		return resmgrError("%s: failed to process pod status response: %v",
+			podID, err)
+	}
+	if dir == "" {
+		return resmgrError("%s: failed to discover cgroup parent", podID)
+	}
+
+	m.Info("%s: discovered cgroup parent: %q", dir)
+
+	return nil
+}
+
 // RunPod intercepts CRI requests for Pod creation.
 func (m *resmgr) RunPod(ctx context.Context, method string, request interface{},
 	handler server.Handler) (interface{}, error) {
@@ -238,7 +253,7 @@ func (m *resmgr) RunPod(ctx context.Context, method string, request interface{},
 	m.Lock()
 	defer m.Unlock()
 
-	pod := m.cache.InsertPod(podID, request)
+	pod := m.cache.InsertPod(podID, request, nil)
 	m.updateIntrospection()
 
 	// search for any lingering old version and clean up if found

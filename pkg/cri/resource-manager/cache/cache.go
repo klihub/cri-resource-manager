@@ -96,6 +96,13 @@ type PodResourceRequirements struct {
 	Containers map[string]v1.ResourceRequirements `json:"containers"`
 }
 
+// PodStatus wraps a PodSandboxStatus response for data extraction.
+type PodStatus struct {
+	Status         *cri.PodSandboxStatusResponse // Status response
+	runtimeHandler string                        // extracted RuntimeHandler
+	cgroupParent   string                        // extracted CgroupParent
+}
+
 // Pod is the exposed interface from a cached pod.
 type Pod interface {
 	resmgr.Evaluable
@@ -549,7 +556,7 @@ type Cachable interface {
 // itself upon startup.
 type Cache interface {
 	// InsertPod inserts a pod into the cache, using a runtime request or reply.
-	InsertPod(id string, msg interface{}) Pod
+	InsertPod(id string, msg interface{}, info *PodStatus) Pod
 	// DeletePod deletes a pod from the cache.
 	DeletePod(id string) Pod
 	// LookupPod looks up a pod in the cache.
@@ -612,7 +619,7 @@ type Cache interface {
 	Save() error
 
 	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
-	RefreshPods(*cri.ListPodSandboxResponse) ([]Pod, []Pod, []Container)
+	RefreshPods(*cri.ListPodSandboxResponse, map[string]*PodStatus) ([]Pod, []Pod, []Container)
 	// RefreshContainers purges/inserts stale/new containers using a container list response.
 	RefreshContainers(*cri.ListContainersResponse) ([]Container, []Container)
 
@@ -884,7 +891,7 @@ func (cch *cache) createCacheID(c *container) string {
 }
 
 // Insert a pod into the cache.
-func (cch *cache) InsertPod(id string, msg interface{}) Pod {
+func (cch *cache) InsertPod(id string, msg interface{}, status *PodStatus) Pod {
 	var err error
 
 	p := &pod{cache: cch, ID: id}
@@ -893,7 +900,7 @@ func (cch *cache) InsertPod(id string, msg interface{}) Pod {
 	case *cri.RunPodSandboxRequest:
 		err = p.fromRunRequest(msg.(*cri.RunPodSandboxRequest))
 	case *cri.PodSandbox:
-		err = p.fromListResponse(msg.(*cri.PodSandbox))
+		err = p.fromListResponse(msg.(*cri.PodSandbox), status)
 	default:
 		err = fmt.Errorf("cannot create pod from message %T", msg)
 	}
@@ -1049,51 +1056,8 @@ func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 	return nil, false
 }
 
-// ExtractRuntimeHandler tries to extract the runtimeHandler from a PodStandboxStatus response.
-func ExtractRuntimeHandler(status *cri.PodSandboxStatusResponse) (string, error) {
-	const (
-		runtimeSpecKey = "runtimeSpec"
-		annotationsKey = "annotations"
-		crioHandlerKey = "io.kubernetes.cri-o.RuntimeHandler"
-	)
-
-	// recent versions of containerd correctly return RuntimeHandler.
-	if status.Status != nil && status.Status.RuntimeHandler != "" {
-		return status.Status.RuntimeHandler, nil
-	}
-
-	if status.Info == nil {
-		return "", nil
-	}
-
-	// cri-o returns and empty RuntimeHandler but has it among Info["runtimeSpec"].annotations
-	blob, ok := status.Info[runtimeSpecKey]
-	if !ok {
-		return "", nil
-	}
-
-	runtimeSpec := map[string]string{}
-	if err := json.Unmarshal([]byte(blob), &runtimeSpec); err != nil {
-		return "", cacheError("%s: failed to extract/decode runtimeSpec: %v",
-			status.Status.Id, err)
-	}
-
-	blob, ok = runtimeSpec[annotationsKey]
-	if !ok {
-		return "", nil
-	}
-
-	annotations := map[string]string{}
-	if err := json.Unmarshal([]byte(blob), &annotations); err != nil {
-		return "", cacheError("%s: failed to extract/decode runtimeHandler: %v",
-			status.Status.Id, err)
-	}
-
-	return annotations[crioHandlerKey], nil
-}
-
 // RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
-func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []Container) {
+func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse, status map[string]*PodStatus) ([]Pod, []Pod, []Container) {
 	valid := make(map[string]struct{})
 
 	add := []Pod{}
@@ -1104,7 +1068,7 @@ func (cch *cache) RefreshPods(msg *cri.ListPodSandboxResponse) ([]Pod, []Pod, []
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
 			cch.Debug("inserting discovered pod %s...", item.Id)
-			pod := cch.InsertPod(item.Id, item)
+			pod := cch.InsertPod(item.Id, item, status[item.Id])
 			add = append(add, pod)
 		}
 	}
@@ -1499,6 +1463,111 @@ func (cch *cache) mkdirAll(what, path string, p *permissions) error {
 	}
 
 	return nil
+}
+
+// parse a PodSandboxStatusResponse message, looking for runtimeHandler and CgroupParent.
+func (ps *PodStatus) parse() error {
+	if ps == nil || ps.Status == nil {
+		return nil
+	}
+
+	status := ps.Status
+
+	if ps.runtimeHandler == "" {
+		ps.runtimeHandler = status.Status.RuntimeHandler
+	}
+
+	if ps.Status.Info == nil {
+		return nil
+	}
+
+	// cri-o, runtimeHandler: Info["info"]["runtimeSpec"]["annotations"][crioRuntimeHandler]
+	// cri-o, CgroupParent:   Info["info"]["runtimeSpec"]["annotations"][crioCgroupParent]
+	if blob, ok := status.Info["info"]; ok {
+		const (
+			crioRuntimeHandler = "io.kubernetes.cri-o.RuntimeHandler"
+			crioCgroupParent   = "io.kubernetes.cri-o.CgroupParent"
+		)
+		type runtimeSpec struct {
+			Annotations map[string]string `json:"annotations"`
+		}
+		type crioInfo struct {
+			RuntimeSpec *runtimeSpec `json:"runtimeSpec"`
+		}
+
+		info := crioInfo{}
+		if err := json.Unmarshal([]byte(blob), &info); err != nil {
+			return cacheError("%s: failed to extract cri-o runtimeSpec: %v",
+				status.Status.Id, err)
+		}
+
+		if info.RuntimeSpec == nil {
+			return cacheError("%s: no cri-o runtimeSpec found",
+				status.Status.Id)
+		}
+
+		annotations := info.RuntimeSpec.Annotations
+		if value, ok := annotations[crioRuntimeHandler]; ok {
+			ps.runtimeHandler = value
+		}
+		if value, ok := annotations[crioCgroupParent]; ok {
+			ps.cgroupParent = value
+		}
+
+		ps.Status = nil
+		return nil
+	}
+
+	// containerd, runtimeHandler: Info["runtimeHandler"]
+	// containerd, CgroupParent:   Info["config"]["linux"]["cgroup_parent"]
+	if blob, ok := status.Info["config"]; ok {
+		type linux struct {
+			CgroupParent string `json:"cgroup_parent"`
+		}
+		type containerdConfig struct {
+			Linux *linux `json:"linux"`
+		}
+
+		if ps.runtimeHandler == "" {
+			ps.runtimeHandler = status.Info["runtimeHandler"]
+		}
+
+		config := containerdConfig{}
+		if err := json.Unmarshal([]byte(blob), &config); err != nil {
+			return cacheError("%s: failed to extract containerd config: %v",
+				status.Status.Id, err)
+		}
+
+		if config.Linux == nil {
+			return cacheError("%s: no containerd config found",
+				status.Status.Id)
+		}
+
+		ps.cgroupParent = config.Linux.CgroupParent
+
+		ps.Status = nil
+		return nil
+	}
+
+	logger.Get("cache").Info("*** it was neither cri-o not containerd")
+
+	return nil
+}
+
+// RuntimeHandler parses the pod status response to extract the runtime handler.
+func (ps *PodStatus) RuntimeHandler() (string, error) {
+	if err := ps.parse(); err != nil {
+		return "", err
+	}
+	return ps.runtimeHandler, nil
+}
+
+// CgroupParent parses the pod status response to extract the cgroup parent.
+func (ps *PodStatus) CgroupParent() (string, error) {
+	if err := ps.parse(); err != nil {
+		return "", err
+	}
+	return ps.cgroupParent, nil
 }
 
 // snapshot is used to serialize the cache into a saveable/loadable state.
