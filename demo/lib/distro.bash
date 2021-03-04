@@ -368,7 +368,7 @@ sed -E -i 's/^SELINUX=.*$/SELINUX=permissive/' /etc/selinux/config
 
 if grep -q NAME=Fedora /etc/os-release; then
     if ! grep -q systemd.unified_cgroup_hierarchy=0 /proc/cmdline; then
-        sed -i -E 's/^kernelopts=(.*)/kernelopts=\1 systemd.unified_cgroup_hierarchy=0/' /boot/grub2/grubenv
+        sudo grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=0"
         shutdown -r now
     fi
 fi
