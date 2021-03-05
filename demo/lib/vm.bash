@@ -595,6 +595,81 @@ EOF
         | vm-pipe-to-file webhook/mutating-webhook-config.yaml
 }
 
+vm-install-jaeger() {
+    cat <<EOF | vm-pipe-to-file jaeger.yaml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jaeger
+  namespace: kube-system
+  labels:
+    app: jaeger
+spec:
+  hostNetwork: true
+  containers:
+  - name: jaeger
+    image: jaegertracing/all-in-one:1.22
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 200m
+      limits:
+        cpu: 200m
+    env:
+    - name: COLLECTOR_ZIPKIN_HTTP_PORT
+      value: "9411"
+    ports:
+      - containerPort: 5775
+        hostPort: 5775
+        protocol: UDP
+      - containerPort: 6831
+        hostPort: 6831
+        protocol: UDP
+      - containerPort: 6832
+        hostPort: 6832
+        protocol: UDP
+      - containerPort: 5778
+        hostPort: 5778
+        protocol: TCP
+      - containerPort: 16686
+        hostPort: 16686
+        protocol: TCP
+      - containerPort: 14268
+        hostPort: 14268
+        protocol: TCP
+      - containerPort: 14250
+        hostPort: 14250
+        protocol: TCP
+      - containerPort: 9441
+        hostPort: 9441
+        protocol: TCP
+EOF
+}
+
+vm-launch-jaeger() {
+    local ns="--namespace kube-system"
+    local query="get pod $ns jaeger -o jsonpath='{.status.containerStatuses[0].ready}'"
+    local timeout
+    if ! vm-command "kubectl apply -f jaeger.yaml"; then
+        command-error "failed to start Jaeger Kubernetes Pod."
+    else
+        timeout=60
+        echo "waiting (max. $timeout seconds) for Jaeger pod to become ready..."
+        ready="$(vm-command-q "kubectl $query")"
+        while [ "$ready" != "true" -a "$timeout" -gt 0 ]; do
+            echo "ready: $ready..."
+            sleep 5
+            let timeout=$timeout-5
+            ready="$(vm-command-q "kubectl $query")"
+        done
+        if [ "$ready" != "true" ]; then
+            command-error "Jaeger pod never became ready"
+        fi
+
+    fi
+}
+
 vm-pkg-type() {
     distro-pkg-type
 }
@@ -671,6 +746,7 @@ vm-create-singlenode-cluster() {
 }
 
 vm-create-cluster() {
+    vm-command-q "nohup /bin/bash -c 'while [ ! -e /var/lib/kubelet/config.yaml ]; do sleep 1; done; systemctl restart kubelet' >& /dev/null &"
     vm-command "kubeadm init --pod-network-cidr=$CNI_SUBNET --cri-socket /var/run/cri-resmgr/cri-resmgr.sock"
     if ! grep -q "initialized successfully" <<< "$COMMAND_OUTPUT"; then
         command-error "kubeadm init failed"

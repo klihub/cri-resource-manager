@@ -54,6 +54,10 @@ usage() {
     echo "             and restart it on the VM before starting test run."
     echo "             The default is 0."
     echo "    omit_agent: if 1, omit installing/starting/cleaning up cri-resmgr-agent."
+    echo "    instrument: Jaeger instrumentation."
+    echo "       empty: disable instrumentation"
+    echo "       \"1\": enable instrumentation, start Jaeger in cluster as a pod."
+    echo "     address: use Jaeger present at address for instrumentation."
     echo "    outdir:  Save output under given directory."
     echo "             The default is \"${SCRIPT_DIR}/output\"."
     echo "    cleanup: Level of cleanup after a test run:"
@@ -471,6 +475,14 @@ launch() { # script API
             host-command "$SCP \"$cri_resmgr_cfg\" $VM_SSH_USER@$VM_IP:" || {
                 command-error "copying \"$cri_resmgr_cfg\" to VM failed"
             }
+            if [ -n "$instrument" -a "$instrument" != "0" ]; then
+                cat <<EOF | vm-pipe-to-file --append $(basename "$cri_resmgr_cfg")
+instrumentation:
+  JaegerCollector: ${INSTRUMENTATION_COLLECTOR}
+  JaegerAgent: ${INSTRUMENTATION_AGENT}
+  Sampling: ${INSTRUMENTATION_SAMPLING}
+EOF
+            fi
             vm-command "cat $(basename "$cri_resmgr_cfg")"
             launch_cmd="cri-resmgr -relay-socket /var/run/cri-resmgr/cri-resmgr.sock -runtime-socket /var/run/containerd/containerd.sock $cri_resmgr_config_option $(basename "$cri_resmgr_cfg") $cri_resmgr_extra_args"
             vm-command-q "echo '$launch_cmd' > cri-resmgr.launch.sh ; rm -f cri-resmgr.output.txt"
@@ -504,6 +516,15 @@ launch() { # script API
             host-command "$SCP \"$cri_resmgr_cfg\" $VM_SSH_USER@$VM_IP:" ||
                 command-error "copying \"$cri_resmgr_cfg\" to VM failed"
             vm-command "cp \"$(basename "$cri_resmgr_cfg")\" /etc/cri-resmgr/fallback.cfg"
+            if [ -n "$instrument" -a "$instrument" != "0" ]; then
+                cat <<EOF | vm-pipe-to-file --append /etc/cri-resmgr/fallback.cfg
+instrumentation:
+  JaegerCollector: ${INSTRUMENTATION_COLLECTOR}
+  JaegerAgent: ${INSTRUMENTATION_AGENT}
+  Sampling: ${INSTRUMENTATION_SAMPLING}
+EOF
+            fi
+
             vm-command "systemctl daemon-reload ; systemctl start cri-resource-manager" ||
                 command-error "systemd failed to start cri-resource-manager"
             sleep 5
@@ -519,7 +540,6 @@ launch() { # script API
                 error "cri-resmgr-webhook deployment did not become Available"
             kubectl apply -f webhook/mutating-webhook-config.yaml
             ;;
-
         *)
             error "launch: invalid target \"$1\""
             ;;
@@ -964,6 +984,7 @@ cleanup=${cleanup:-0}
 reinstall_cri_resmgr=${reinstall_cri_resmgr:-0}
 reinstall_cri_resmgr_agent=${reinstall_cri_resmgr_agent:-0}
 omit_agent=${omit_agent:-0}
+instrument=${instrument:-0}
 py_consts="${py_consts:-''}"
 topology=${topology:-'[
     {"mem": "1G", "cores": 1, "nodes": 2, "packages": 2, "node-dist": {"4": 28, "5": 28}},
@@ -1109,6 +1130,25 @@ if ! vm-command-q "type -p cri-resmgr-agent >/dev/null"; then
     install cri-resmgr-agent
 fi
 
+case "$instrument" in
+    ""|"0")
+        export INSTRUMENTATION_COLLECTOR=""
+        export INSTRUMENTATION_AGENT=""
+        export INSTRUMENTATION_SAMPLING="disabled"
+        ;;
+    "1")
+        export INSTRUMENTATION_COLLECTOR="http://localhost:14268/api/traces"
+        export INSTRUMENTATION_AGENT="localhost:6831"
+        export INSTRUMENTATION_SAMPLING="testing"
+        vm-install-jaeger
+        ;;
+    *)
+        export INSTRUMENTATION_COLLECTOR="http://$instrument:14268/api/traces"
+        export INSTRUMENTATION_AGENT="$instrument:6831"
+        export INSTRUMENTATION_SAMPLING="testing"
+        ;;
+esac
+
 # Start cri-resmgr if not already running
 if ! vm-command-q "pidof cri-resmgr" >/dev/null; then
     screen-launch-cri-resmgr
@@ -1122,6 +1162,10 @@ if vm-command-q "[ ! -f /var/lib/kubelet/config.yaml ]"; then
 else
     # Wait for kube-apiserver to launch (may be down if the VM was just booted)
     vm-wait-process kube-apiserver
+fi
+
+if [ "$instrument" == "1" ]; then
+    vm-launch-jaeger
 fi
 
 # Start cri-resmgr-agent if not already running
