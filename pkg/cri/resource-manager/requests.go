@@ -26,6 +26,8 @@ import (
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/events"
 	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/policy"
 	"github.com/intel/cri-resource-manager/pkg/cri/server"
+
+	"go.opencensus.io/trace"
 )
 
 // setupRequestProcessing prepares the resource manager for CRI request processing.
@@ -368,6 +370,9 @@ func (m *resmgr) RemovePod(ctx context.Context, method string, request interface
 func (m *resmgr) CreateContainer(ctx context.Context, method string, request interface{},
 	handler server.Handler) (interface{}, error) {
 
+	ctx, span := trace.StartSpan(ctx, "Resource Allocation Policy Decision")
+	defer func() { span.End() }()
+
 	m.Lock()
 	defer m.Unlock()
 
@@ -399,6 +404,9 @@ func (m *resmgr) CreateContainer(ctx context.Context, method string, request int
 		m.cache.DeleteContainer(container.GetCacheID())
 		return nil, resmgrError("failed to allocate container resources: %v", err)
 	}
+
+	span.End()
+	ctx, span = trace.StartSpan(ctx, "Resource Allocation Policy Enforcement")
 
 	container.InsertMount(&cache.Mount{
 		Container:   "/.cri-resmgr",
@@ -490,8 +498,10 @@ func (m *resmgr) StartContainer(ctx context.Context, method string, request inte
 // StopContainer intercepts CRI requests for stopping Containers.
 func (m *resmgr) StopContainer(ctx context.Context, method string, request interface{},
 	handler server.Handler) (interface{}, error) {
-
 	reply, rqerr := handler(ctx, request)
+
+	ctx, span := trace.StartSpan(ctx, "Resource Release Policy Decision")
+	defer func() { span.End() }()
 
 	m.Lock()
 	defer m.Unlock()
@@ -522,6 +532,9 @@ func (m *resmgr) StopContainer(ctx context.Context, method string, request inter
 	}
 
 	container.UpdateState(cache.ContainerStateExited)
+
+	span.End()
+	ctx, span = trace.StartSpan(ctx, "Resource Release Policy Enforcement")
 
 	if err := m.runPostReleaseHooks(ctx, method, container); err != nil {
 		m.Error("%s: failed to run post-release hooks for %s: %v",
