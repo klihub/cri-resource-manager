@@ -1,0 +1,71 @@
+#!/bin/bash
+
+URL="http://172.17.0.1:16686/api/traces"
+PLOT=true
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+            URL=http://$1:16686/api/traces
+            shift
+            ;;
+        http://*/api/traces)
+            URL=$1
+            shift
+            ;;
+        --plot=*)
+            PLOT="${1#--plot=}"
+            shift
+            ;;
+        --no-plot)
+            PLOT=""
+            shift
+            ;;
+        --help|-h)
+            echo "usage: $0 [--plot=boolean] jaeger-address-or-url"
+            exit 0
+            ;;
+        *)
+            echo "unknown command line option/argument \"$1\""
+            exit 1
+            ;;
+    esac
+done
+
+# Operations we scrape traces for.
+OPS="Recv.runtime.v1alpha2.RuntimeService.CreateContainer \
+     Recv.runtime.v1alpha2.RuntimeService.StopContainer"
+
+# Scrape traces, extract the allocation/release decision/eforcement latencies.
+for op in $OPS; do
+    method=${op##*.}
+    traces=$method.traces
+    query="service=CRI-RM&operation=$op&limit=16777216"
+    echo -n "querying $URL for $query... "
+    wget --quiet "$URL?$query" -O $traces || {
+        echo "wget failed"
+        exit 1
+    }
+    echo "done."
+    case $method in
+        CreateContainer) policy=Allocation;;
+        StopContainer)   policy=Release;;
+    esac
+    for kind in Decision Enforcement; do
+        output=${policy,,}-${kind,,}.latencies
+        echo -n "extracting ${policy,,} ${kind,,} latencies to $output..."
+        cat $traces | \
+            jq ".data[].spans[] | \
+            select( .operationName == \"Resource $policy Policy $kind\" ) | \
+                    .duration" > $output
+        count=$(cat $output | wc -l)
+        echo " $count entries"
+    done
+done
+
+# Plot collected latency data as histograms and percentiles.
+case $PLOT in
+    true|yes|1)
+        octave --persist -f ${0%/*}/jaeger-plot-latencies.m
+        ;;
+esac
