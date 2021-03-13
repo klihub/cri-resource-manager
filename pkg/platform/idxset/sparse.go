@@ -222,6 +222,10 @@ func (s *sparse) String() string {
 	return s.str
 }
 
+func (s *sparse) Pretty() string {
+	return toPretty(s)
+}
+
 func (s *sparse) Parse(str string) error {
 	return parse(s, str)
 }

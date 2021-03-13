@@ -59,6 +59,8 @@ type IdxSet interface {
 	Equals(IdxSet) bool
 	// String returns a string representation of this set.
 	String() string
+	// Pretty returns a prettyfied string representation of this set.
+	Pretty() string
 	// Parse updates set to have the indices present in the string.
 	Parse(string) error
 	// MustParse calls Parse() and panics on errors.
@@ -105,6 +107,68 @@ func toString(s IdxSet) string {
 			return false
 		})
 	writeRange(beg, end)
+
+	return str.String()
+}
+
+func toPretty(s IdxSet) string {
+	str := strings.Builder{}
+	beg, end, step := -1, -1, -1
+
+	writeRange := func(beg, end, step int) {
+		if beg < 0 {
+			return
+		}
+
+		if str.Len() > 0 {
+			str.WriteString(",")
+		}
+		str.WriteString(strconv.Itoa(beg))
+
+		if end < 0 {
+			return
+		}
+
+		switch {
+		case step == 1 || end-beg == 1:
+			str.WriteString("-")
+		case step < 0:
+			str.WriteString(",")
+		case (end-beg)%step == 0:
+			if (end-beg)/step > 2 {
+				str.WriteString("..")
+				str.WriteString(strconv.Itoa(step))
+				str.WriteString("..")
+			} else {
+				str.WriteString(",")
+				for idx := beg + step; idx < end; idx += step {
+					str.WriteString(strconv.Itoa(idx))
+					str.WriteString(",")
+				}
+			}
+		}
+		str.WriteString(strconv.Itoa(end))
+	}
+
+	s.ForEach(
+		func(idx int) bool {
+			switch {
+			case beg < 0:
+				beg = idx
+			case end < 0:
+				end = idx
+				step = end - beg
+			case idx == end+step:
+				end = idx
+			default:
+				writeRange(beg, end, step)
+				beg = idx
+				end = -1
+				step = -1
+			}
+			return false
+		})
+	writeRange(beg, end, step)
 
 	return str.String()
 }

@@ -242,6 +242,10 @@ func (s *dense) String() string {
 	return s.str
 }
 
+func (s *dense) Pretty() string {
+	return toPretty(s)
+}
+
 func (s *dense) Parse(str string) error {
 	return parse(s, str)
 }
