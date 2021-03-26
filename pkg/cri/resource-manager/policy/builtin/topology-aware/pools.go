@@ -792,21 +792,15 @@ func (p *policy) calculatePoolAffinities(container cache.Container) map[int]int3
 
 // Calculate affinity of this container (against all other containers).
 func (p *policy) calculateContainerAffinity(container cache.Container) map[string]int32 {
-	log.Debug("* calculating affinity for container %s...", container.PrettyName())
-
-	ca := container.GetAffinity()
+	log.Debug("* calculating all affinities for container %s...", container.PrettyName())
 
 	result := make(map[string]int32)
-	for _, a := range ca {
-		for id, w := range p.cache.EvaluateAffinity(a) {
-			result[id] += w
-		}
+	for _, c := range p.cache.GetContainers() {
+		id := c.GetCacheID()
+		weight := container.ContainerAffinity(c)
+		result[id] = weight
+		log.Debug("  => %s: %d", c.PrettyName(), weight)
 	}
-
-	// self-affinity does not make sense, so remove any
-	delete(result, container.GetCacheID())
-
-	log.Debug("  => affinity: %v", result)
 
 	return result
 }

@@ -188,7 +188,7 @@ type pod struct {
 	containers   map[string]string // container name to ID map
 
 	Resources *PodResourceRequirements // annotated resource requirements
-	Affinity  *podContainerAffinity    // annotated container affinity
+	Affinity  podContainerAffinity     // annotated container affinity
 }
 
 // ContainerState is the container state in the runtime.
@@ -350,6 +350,11 @@ type Container interface {
 	// GetAffinity returns the annotated affinity expressions for this container.
 	GetAffinity() []*Affinity
 
+	// EvaluateAffinity evaluates the given affinity for this container.
+	EvaluateAffinity(*Affinity) int32
+	// ContainerAffinity
+	ContainerAffinity(Container) int32
+
 	// GetCgroupDir returns the relative path of the cgroup directory for the container.
 	GetCgroupDir() string
 
@@ -427,6 +432,7 @@ type container struct {
 	TopologyHints topology.Hints     // Set of topology hints for all containers within Pod
 	Tags          map[string]string  // container tags (local dynamic labels)
 	Adjustment    string             // name of applicable external adjustment, if any
+	Affinity      []*Affinity        // effective affinities for this container
 
 	Resources v1.ResourceRequirements      // container resources (from webhook annotation)
 	LinuxReq  *cri.LinuxContainerResources // used to estimate Resources if we lack annotations

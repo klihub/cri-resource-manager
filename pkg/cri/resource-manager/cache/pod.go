@@ -57,6 +57,9 @@ func (p *pod) fromRunRequest(req *cri.RunPodSandboxRequest) error {
 	}
 
 	p.parseResourceAnnotations()
+	if err := p.parseAffinityAnnotations(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -82,6 +85,9 @@ func (p *pod) fromListResponse(pod *cri.PodSandbox, status *PodStatus) error {
 	}
 
 	p.parseResourceAnnotations()
+	if err := p.parseAffinityAnnotations(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -373,42 +379,10 @@ func (p *pod) GetQOSClass() v1.PodQOSClass {
 
 // GetContainerAffinity returns the annotated affinity for the named container.
 func (p *pod) GetContainerAffinity(name string) []*Affinity {
-	if p.Affinity != nil {
-		return (*p.Affinity)[name]
+	if a, ok := p.Affinity[name]; ok {
+		return a
 	}
-
-	p.Affinity = &podContainerAffinity{}
-
-	value, ok := p.GetResmgrAnnotation(keyAffinity)
-	if ok {
-		weight := DefaultWeight
-		if !p.Affinity.parseSimple(p, value, weight) {
-			if err := p.Affinity.parseFull(p, value, weight); err != nil {
-				p.cache.Error("%v", err)
-			}
-		}
-	}
-	value, ok = p.GetResmgrAnnotation(keyAntiAffinity)
-	if ok {
-		weight := -DefaultWeight
-		if !p.Affinity.parseSimple(p, value, weight) {
-			if err := p.Affinity.parseFull(p, value, weight); err != nil {
-				p.cache.Error("%v", err)
-			}
-		}
-	}
-
-	if p.cache.DebugEnabled() {
-		p.cache.Debug("Pod container affinity for %s:", p.GetName())
-		for id, ca := range *p.Affinity {
-			p.cache.Debug("  - container %s:", id)
-			for _, a := range ca {
-				p.cache.Debug("    * %s", a.String())
-			}
-		}
-	}
-
-	return (*p.Affinity)[name]
+	return p.Affinity[""]
 }
 
 // ScopeExpression returns an affinity expression for defining this pod as the scope.
@@ -444,6 +418,82 @@ func (p *pod) Eval(key string) interface{} {
 	default:
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
+}
+
+// parse pod container affinity annotations.
+func (p *pod) parseAffinityAnnotations() error {
+	p.Affinity = podContainerAffinity{}
+
+	value, ok := p.GetResmgrAnnotation(keyAffinity)
+	if ok {
+		weight := DefaultWeight
+		if !p.Affinity.parseSimple(p, value, weight) {
+			if err := p.Affinity.parseFull(p, value, weight); err != nil {
+				return err
+			}
+		}
+	}
+	value, ok = p.GetResmgrAnnotation(keyAntiAffinity)
+	if ok {
+		weight := -DefaultWeight
+		if !p.Affinity.parseSimple(p, value, weight) {
+			if err := p.Affinity.parseFull(p, value, weight); err != nil {
+				return err
+			}
+		}
+	}
+
+	pullPrefix := keyAffinity + "." + kubernetes.ResmgrKeyNamespace + "/"
+	pushPrefix := keyAntiAffinity + "." + kubernetes.ResmgrKeyNamespace + "/"
+	for key, value := range p.Annotations {
+		var scope string
+		var weight int32
+		switch {
+		case strings.HasPrefix(key, pullPrefix):
+			scope = strings.TrimPrefix(key, pullPrefix)
+			weight = DefaultWeight
+		case strings.HasPrefix(key, pushPrefix):
+			scope = strings.TrimPrefix(key, pushPrefix)
+			weight = -DefaultWeight
+		default:
+			continue
+		}
+
+		if scope == "pod" {
+			scope = ""
+		} else {
+			scope = strings.TrimPrefix(scope, "container/")
+		}
+
+		a, err := parseAffinity(p, scope, value, weight)
+		if err != nil {
+			return err
+		}
+
+		p.Affinity[scope] = append(p.Affinity[scope], a...)
+	}
+
+	if p.cache.DebugEnabled() {
+		p.cache.Debug("pod %q affinities:", p.GetName())
+		affinities, ok := p.Affinity[""]
+		if ok {
+			p.cache.Debug("  - container defaults: ")
+			for _, a := range affinities {
+				p.cache.Debug("    * %s", a.String())
+			}
+		}
+		for id, affinities := range p.Affinity {
+			if id == "" {
+				continue
+			}
+			p.cache.Debug("  - container %s:", id)
+			for _, a := range affinities {
+				p.cache.Debug("    * %s", a.String())
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetProcesses returns the pids of processes in a pod.

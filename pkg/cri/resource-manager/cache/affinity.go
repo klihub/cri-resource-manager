@@ -37,8 +37,11 @@ type Expression struct {
 // simpleAffinity is an alternative, simplified syntax for intra-pod container affinity.
 type simpleAffinity map[string][]string
 
-// PodContainerAffinity defines a set of per-container affinities and anti-affinities.
+// podContainerAffinity defines a set of per-container affinities and anti-affinities.
 type podContainerAffinity map[string][]*Affinity
+
+// podAffinity defines a set of per pod (effective) affinities.
+type podAffinity []*Affinity
 
 // Affinity specifies a single container affinity.
 type Affinity struct {
@@ -118,7 +121,7 @@ func (a *Affinity) String() string {
 }
 
 // Try to parse affinities in simplified notation from the given annotation value.
-func (pca *podContainerAffinity) parseSimple(pod *pod, value string, weight int32) bool {
+func (pca podContainerAffinity) parseSimple(pod *pod, value string, weight int32) bool {
 	parsed := simpleAffinity{}
 	if err := yaml.Unmarshal([]byte(value), &parsed); err != nil {
 		return false
@@ -167,7 +170,7 @@ func (pca *podContainerAffinity) parseSimple(pod *pod, value string, weight int3
 		} else {
 			op = resmgr.In
 		}
-		(*pca)[name] = append((*pca)[name],
+		pca[name] = append(pca[name],
 			&Affinity{
 				Scope: podScope,
 				Match: &resmgr.Expression{
@@ -183,7 +186,7 @@ func (pca *podContainerAffinity) parseSimple(pod *pod, value string, weight int3
 }
 
 // Try to parse affinities in full notation from the given annotation value.
-func (pca *podContainerAffinity) parseFull(pod *pod, value string, weight int32) error {
+func (pca podContainerAffinity) parseFull(pod *pod, value string, weight int32) error {
 	parsed := podContainerAffinity{}
 	if err := yaml.Unmarshal([]byte(value), &parsed); err != nil {
 		return cacheError("failed to parse affinity annotation '%s': %v", value, err)
@@ -191,7 +194,7 @@ func (pca *podContainerAffinity) parseFull(pod *pod, value string, weight int32)
 
 	podScope := pod.ScopeExpression()
 	for name, pa := range parsed {
-		ca, ok := (*pca)[name]
+		ca, ok := pca[name]
 		if !ok {
 			ca = make([]*Affinity, 0, len(pa))
 		}
@@ -214,10 +217,36 @@ func (pca *podContainerAffinity) parseFull(pod *pod, value string, weight int32)
 			ca = append(ca, a)
 		}
 
-		(*pca)[name] = ca
+		pca[name] = ca
 	}
 
 	return nil
+}
+
+// Try to parse affinities in full notation from the given annotation value.
+func parseAffinity(pod *pod, scope, value string, weight int32) ([]*Affinity, error) {
+	pa := podAffinity{}
+	if err := yaml.Unmarshal([]byte(value), &pa); err != nil {
+		return nil, cacheError("failed to parse pod affinity annotation '%s': %v", value, err)
+	}
+
+	podScope := pod.ScopeExpression()
+	for _, a := range pa {
+		if a.Scope == nil {
+			a.Scope = podScope
+		}
+		if a.Weight == 0 {
+			a.Weight = weight
+		} else {
+			if weight < 0 {
+				a.Weight *= -1
+			}
+		}
+		if err := a.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return pa, nil
 }
 
 // GlobalAffinity creates an affinity with all containers in scope.

@@ -133,6 +133,7 @@ func (c *container) fromCreateRequest(req *cri.CreateContainerRequest) error {
 	}
 
 	c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, getKubeletHint(c.GetCpusetCpus(), c.GetCpusetMems()))
+	c.getEffectiveAffinities()
 
 	if err := c.setDefaults(); err != nil {
 		return err
@@ -175,6 +176,7 @@ func (c *container) fromListResponse(lrc *cri.Container) error {
 	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
 		c.Resources = estimateComputeResources(c.LinuxReq, pod.CgroupParent)
 	}
+	c.getEffectiveAffinities()
 
 	if err := c.setDefaults(); err != nil {
 		return err
@@ -751,19 +753,22 @@ func getKubeletHint(cpus, mems string) (ret topology.Hints) {
 	return
 }
 
-func (c *container) GetAffinity() []*Affinity {
+func (c *container) getEffectiveAffinities() {
 	pod, ok := c.GetPod()
 	if !ok {
-		c.cache.Error("internal error: can't find Pod for container %s", c.PrettyName())
+		return
 	}
-
-	affinity := append(pod.GetContainerAffinity(c.GetName()), c.implicitAffinities()...)
-	c.cache.Debug("affinity for container %s:", c.PrettyName())
-	for _, a := range affinity {
-		c.cache.Debug("  - %s", a.String())
+	c.Affinity = append(pod.GetContainerAffinity(c.Name), c.implicitAffinities()...)
+	if len(c.Affinity) > 0 {
+		c.cache.Debug("effective affinity for container %s:", c.PrettyName())
+		for _, a := range c.Affinity {
+			c.cache.Debug("  - %s", a.String())
+		}
 	}
+}
 
-	return affinity
+func (c *container) GetAffinity() []*Affinity {
+	return c.Affinity
 }
 
 func (c *container) GetCgroupDir() string {
@@ -1008,6 +1013,32 @@ func (c *container) Eval(key string) interface{} {
 	default:
 		return cacheError("%s: Container cannot evaluate of %q", c.PrettyName(), key)
 	}
+}
+
+// EvaluateAffinity evaluates the container against a  given affinity.
+func (c *container) EvaluateAffinity(a *Affinity) int32 {
+	if a.Scope.Evaluate(c) {
+		if a.Match.Evaluate(c) {
+			return a.Weight
+		}
+	}
+	return 0
+}
+
+// ContainerAffinity calculates the total affinity between two containers.
+func (c *container) ContainerAffinity(other Container) int32 {
+	if c.GetID() == other.GetID() {
+		return 0
+	}
+
+	var weight int32
+	for _, a := range c.GetAffinity() {
+		weight += other.EvaluateAffinity(a)
+	}
+	for _, a := range other.GetAffinity() {
+		weight += c.EvaluateAffinity(a)
+	}
+	return weight
 }
 
 // CompareContainersFn compares two containers by some arbitrary property.
