@@ -6,12 +6,15 @@ require (
 	contrib.go.opencensus.io/exporter/jaeger v0.1.0
 	contrib.go.opencensus.io/exporter/prometheus v0.1.1-0.20191218042359-6151c48ac7fa
 	github.com/cilium/ebpf v0.2.0
+	github.com/containerd/nri v0.1.0 // indirect
+	github.com/containerd/ttrpc v1.0.2 // indirect
 	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/golang/protobuf v1.4.3
-	github.com/google/go-cmp v0.5.2
+	github.com/google/go-cmp v0.5.4
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/intel/cri-resource-manager/pkg/topology v0.0.0
 	github.com/intel/goresctrl v0.0.0-20210216084728-8e0ae5411bf4
+	github.com/opencontainers/runc v1.0.0-rc93 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.8.0
 	github.com/prometheus/client_model v0.2.0
@@ -20,9 +23,9 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	go.opencensus.io v0.22.3
 	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
-	golang.org/x/sys v0.0.0-20210225134936-a50acf3fe073
+	golang.org/x/sys v0.0.0-20210511113859-b0526f3d8744
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
-	google.golang.org/grpc v1.27.1
+	google.golang.org/grpc v1.33.2
 	k8s.io/api v0.21.0
 	k8s.io/apimachinery v0.21.0
 	k8s.io/client-go v0.21.0
@@ -33,6 +36,7 @@ require (
 )
 
 replace (
+	github.com/containerd/nri v0.1.0 => ../nri
 	github.com/intel/cri-resource-manager/pkg/topology v0.0.0 => ./pkg/topology
 	google.golang.org/grpc => google.golang.org/grpc v1.26.0
 
